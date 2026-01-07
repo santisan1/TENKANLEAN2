@@ -488,7 +488,7 @@ const PlantMap = ({ locationStatuses, orders }) => {
     { id: 'Estantería D', x: 37.5, y: 66.88 },
   ];
   const handleMapClick = (e) => {
-    print("ashe")
+
   };
   // Reemplazar esta URL por tu imagen real del plano de planta
   const plantLayoutImage = "tu-plano.png";
