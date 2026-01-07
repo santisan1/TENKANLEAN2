@@ -486,8 +486,6 @@ const PlantMap = ({ locationStatuses, orders }) => {
     { id: 'Estantería B', x: 50, y: 20 },
     { id: 'Estantería C', x: 75, y: 20 },
     { id: 'Estantería D', x: 50, y: 70 },
-    { id: 'Estantería E', x: 25, y: 50 },
-    { id: 'Estantería F', x: 75, y: 50 }
   ];
 
   // Reemplazar esta URL por tu imagen real del plano de planta
@@ -522,7 +520,8 @@ const PlantMap = ({ locationStatuses, orders }) => {
       </div>
 
       <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
-
+        onClick={handleMapClick}
+        className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair"
         {/* Imagen del plano de planta - Ajuste Completo */}
         <div className="absolute inset-0 flex items-center justify-center bg-gray-950/40">
           <img
