@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDoc, getDocs, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp, getDoc } from 'firebase/firestore';
 import { Package, AlertTriangle, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -69,6 +69,7 @@ const OperatorView = () => {
   const [feedback, setFeedback] = useState(null);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [existingOrderInfo, setExistingOrderInfo] = useState(null);
+  const [lastScanTime, setLastScanTime] = useState(0);
 
   const clearFeedback = () => {
     setFeedback(null);
@@ -100,6 +101,15 @@ const OperatorView = () => {
   };
 
   const handleScan = async (scannedId) => {
+    const now = Date.now();
+    if (now - lastScanTime < 5000) {
+      setFeedback({
+        type: 'error',
+        message: 'Aguarde 5 segundos entre escaneos'
+      });
+      return;
+    }
+    setLastScanTime(now);
     if (!scannedId) return;
 
     setScanning(true);
@@ -121,7 +131,7 @@ const OperatorView = () => {
       }
 
       const card = cardSnap.data();
-
+      const minutosEspera = Math.floor((Date.now() - existingOrder.timestamp.toMillis()) / 60000);
       // 2. Check for existing active order
       const existingOrder = await checkExistingOrder(scannedId);
 
@@ -140,7 +150,7 @@ const OperatorView = () => {
 
         setFeedback({
           type: 'info',
-          message: `${statusMessage[existingOrder.status] || 'Pedido en progreso'}\n${existingOrder.partNumber} - ${card.description}\nNo se requiere nueva solicitud`
+          message: `${statusMessage[existingOrder.status] || 'Pedido en progreso'}\n${existingOrder.partNumber} - ${card.description}\n Esperando ${minutosEspera} minutos\nNo se requiere nueva solicitud`
         });
 
         setTimeout(() => {
@@ -225,40 +235,48 @@ const OperatorView = () => {
         <AnimatePresence>
           {existingOrderInfo && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
               className="mt-4"
             >
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-yellow-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Info className="w-6 h-6 text-yellow-400" />
+              <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500/50 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-14 h-14 bg-yellow-500/30 rounded-full flex items-center justify-center animate-pulse">
+                    <Info className="w-8 h-8 text-yellow-300" />
                   </div>
                   <div>
-                    <p className="font-bold text-yellow-300 mb-1">¡Ya existe un pedido activo!</p>
-                    <div className="text-sm text-gray-300 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">Estado:</span>
-                        <span className="font-medium capitalize">
-                          {existingOrderInfo.status === 'PENDING' ? '🟡 Pendiente' : '🟠 En camino'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">Solicitado:</span>
-                        <span className="font-medium">
-                          {formatTime(existingOrderInfo.timestamp)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">Material:</span>
-                        <span className="font-medium">{existingOrderInfo.partNumber}</span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-yellow-400 mt-3">
-                      El almacén ya está procesando esta solicitud
-                    </p>
+                    <p className="font-bold text-yellow-200 text-xl">Pedido ya en proceso</p>
+                    <p className="text-yellow-300/80 text-sm">No es necesario volver a escanear</p>
                   </div>
+                </div>
+
+                <div className="bg-gray-900/50 rounded-xl p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300">Estado:</span>
+                    <span className={`px-3 py-1 rounded-full font-bold ${existingOrderInfo.status === 'PENDING'
+                      ? 'bg-yellow-500/20 text-yellow-300'
+                      : 'bg-orange-500/20 text-orange-300'
+                      }`}>
+                      {existingOrderInfo.status === 'PENDING' ? '⏳ Pendiente' : '🚚 En camino'}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Solicitado:</span>
+                    <span className="font-mono font-bold text-white">
+                      {formatTime(existingOrderInfo.timestamp)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Material:</span>
+                    <span className="font-medium text-white">{existingOrderInfo.partNumber}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-center gap-2 text-sm text-yellow-300/80">
+                  <Clock className="w-4 h-4" />
+                  <span>El almacén está procesando tu solicitud</span>
                 </div>
               </div>
             </motion.div>
