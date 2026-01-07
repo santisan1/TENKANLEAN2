@@ -34,7 +34,8 @@ const formatTime = (timestamp) => {
 // Function to check for existing active orders
 const checkExistingOrder = async (cardId) => {
   try {
-    // Query for existing active orders with this cardId
+    console.log('🔍 Buscando pedidos activos para:', cardId);
+
     const q = query(
       collection(db, 'active_orders'),
       where('cardId', '==', cardId),
@@ -43,8 +44,12 @@ const checkExistingOrder = async (cardId) => {
 
     const querySnapshot = await getDocs(q);
 
+    console.log('📊 Documentos encontrados:', querySnapshot.size);
+
     if (!querySnapshot.empty) {
       const existingOrder = querySnapshot.docs[0].data();
+      console.log('⚠️ PEDIDO DUPLICADO DETECTADO:', existingOrder);
+
       return {
         exists: true,
         orderId: querySnapshot.docs[0].id,
@@ -55,13 +60,14 @@ const checkExistingOrder = async (cardId) => {
       };
     }
 
+    console.log('✅ No hay pedidos duplicados, puede crear nuevo');
     return { exists: false };
+
   } catch (error) {
-    console.error('Error checking existing order:', error);
+    console.error('❌ Error checking existing order:', error);
     return { exists: false, error: error.message };
   }
 };
-
 // Component: Operator View (Mobile)
 const OperatorView = () => {
   const [cardId, setCardId] = useState('');
