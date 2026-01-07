@@ -527,16 +527,16 @@ const PlantMap = ({ locationStatuses, orders }) => {
       <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
         <div
           onClick={handleMapClick}
-          className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair"
+          className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair group"
         >
-          {/* Imagen del plano - Ajuste Completo */}
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-950/40">
+          {/* Imagen del plano - Centrada con márgenes negros a los lados */}
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-950/40 pointer-events-none">
             <img
               src={plantLayoutImage}
               alt="Plano de planta"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain opacity-80"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-gray-950/70 via-transparent to-transparent pointer-events-none"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-950/70 via-transparent to-transparent"></div>
           </div>
 
           {/* Overlay de grid sutil */}
