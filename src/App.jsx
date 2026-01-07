@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp, getDoc } from 'firebase/firestore';
-import { Package, AlertTriangle, CheckCircle, Truck, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
+import { Package, AlertTriangle, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Firebase Configuration
@@ -31,6 +31,36 @@ const formatTime = (timestamp) => {
   if (!timestamp) return '--:--';
   return timestamp.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
+// Function to check for existing active orders
+const checkExistingOrder = async (cardId) => {
+  try {
+    // Query for existing active orders with this cardId
+    const q = query(
+      collection(db, 'active_orders'),
+      where('cardId', '==', cardId),
+      where('status', 'in', ['PENDING', 'IN_TRANSIT'])
+    );
+
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const existingOrder = querySnapshot.docs[0].data();
+      return {
+        exists: true,
+        orderId: querySnapshot.docs[0].id,
+        status: existingOrder.status,
+        timestamp: existingOrder.timestamp,
+        location: existingOrder.location,
+        partNumber: existingOrder.partNumber
+      };
+    }
+
+    return { exists: false };
+  } catch (error) {
+    console.error('Error checking existing order:', error);
+    return { exists: false, error: error.message };
+  }
+};
 
 // Component: Operator View (Mobile)
 const OperatorView = () => {
@@ -38,7 +68,13 @@ const OperatorView = () => {
   const [scanning, setScanning] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [existingOrderInfo, setExistingOrderInfo] = useState(null);
 
+  const clearFeedback = () => {
+    setFeedback(null);
+    setExistingOrderInfo(null);
+    setCardId('');
+  };
   // AUTO-SUBMIT FROM URL PARAMETER
   useEffect(() => {
     if (autoSubmitted) return;
@@ -68,20 +104,54 @@ const OperatorView = () => {
 
     setScanning(true);
     setFeedback(null);
+    setExistingOrderInfo(null);
 
     try {
+      // 1. Check if card exists in master
       const cardRef = doc(db, 'kanban_cards', scannedId);
       const cardSnap = await getDoc(cardRef);
 
       if (!cardSnap.exists()) {
-        setFeedback({ type: 'error', message: 'Tarjeta no encontrada en el sistema' });
+        setFeedback({
+          type: 'error',
+          message: 'Tarjeta no registrada\nContacte al supervisor'
+        });
         setScanning(false);
         return;
       }
 
       const card = cardSnap.data();
 
-      // Create order in Firestore
+      // 2. Check for existing active order
+      const existingOrder = await checkExistingOrder(scannedId);
+
+      if (existingOrder.exists) {
+        setExistingOrderInfo({
+          status: existingOrder.status,
+          timestamp: existingOrder.timestamp,
+          location: existingOrder.location,
+          partNumber: existingOrder.partNumber
+        });
+
+        const statusMessage = {
+          'PENDING': 'Ya hay un pedido pendiente',
+          'IN_TRANSIT': 'El material está en camino'
+        };
+
+        setFeedback({
+          type: 'info',
+          message: `${statusMessage[existingOrder.status] || 'Pedido en progreso'}\n${existingOrder.partNumber} - ${card.description}\nNo se requiere nueva solicitud`
+        });
+
+        setTimeout(() => {
+          setFeedback(null);
+          setCardId('');
+        }, 5000);
+        setScanning(false);
+        return;
+      }
+
+      // 3. Create new order if no existing active order
       const docRef = await addDoc(collection(db, 'active_orders'), {
         cardId: scannedId,
         partNumber: card.partNumber,
@@ -97,22 +167,24 @@ const OperatorView = () => {
 
       setFeedback({
         type: 'success',
-        message: `Pedido Enviado a Almacén\n${card.partNumber} - ${card.description}`
+        message: `✓ Pedido enviado a Almacén\n${card.partNumber} - ${card.description}\nUbicación: ${card.location}`
       });
 
       setTimeout(() => {
         setFeedback(null);
         setCardId('');
-      }, 3000);
+      }, 4000);
 
     } catch (error) {
       console.error('Error creating order:', error);
-      setFeedback({ type: 'error', message: 'Error al procesar el pedido: ' + error.message });
+      setFeedback({
+        type: 'error',
+        message: 'Error del sistema\nContacte al supervisor'
+      });
     }
 
     setScanning(false);
   };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950">
       {/* Industrial Header */}
@@ -149,7 +221,49 @@ const OperatorView = () => {
           <h2 className="text-2xl font-bold text-white mb-2">Escaneo de Material</h2>
           <p className="text-gray-400 text-sm">Escanee el código QR de la tarjeta Kanban para solicitar material</p>
         </motion.div>
-
+        {/* Existing Order Info */}
+        <AnimatePresence>
+          {existingOrderInfo && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mt-4"
+            >
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-yellow-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Info className="w-6 h-6 text-yellow-400" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-yellow-300 mb-1">¡Ya existe un pedido activo!</p>
+                    <div className="text-sm text-gray-300 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">Estado:</span>
+                        <span className="font-medium capitalize">
+                          {existingOrderInfo.status === 'PENDING' ? '🟡 Pendiente' : '🟠 En camino'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">Solicitado:</span>
+                        <span className="font-medium">
+                          {formatTime(existingOrderInfo.timestamp)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">Material:</span>
+                        <span className="font-medium">{existingOrderInfo.partNumber}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-yellow-400 mt-3">
+                      El almacén ya está procesando esta solicitud
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -213,31 +327,59 @@ const OperatorView = () => {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mt-6 overflow-hidden"
+                className="mt-4 overflow-hidden"
               >
                 <div className={`p-4 rounded-xl border ${feedback.type === 'success'
                   ? 'bg-green-500/10 border-green-500/30'
-                  : 'bg-red-500/10 border-red-500/30'
+                  : feedback.type === 'error'
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : 'bg-blue-500/10 border-blue-500/30'
                   }`}>
                   <div className="flex items-start gap-3">
-                    {feedback.type === 'success' ? (
+                    {feedback.type === 'success' && (
                       <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
                         <CheckCircle className="w-6 h-6 text-green-400" />
                       </div>
-                    ) : (
+                    )}
+                    {feedback.type === 'error' && (
                       <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
                         <AlertTriangle className="w-6 h-6 text-red-400" />
                       </div>
                     )}
-                    <div>
-                      <p className={`font-bold ${feedback.type === 'success' ? 'text-green-300' : 'text-red-300'}`}>
-                        {feedback.type === 'success' ? '✓ Pedido Confirmado' : '✗ Error'}
+                    {feedback.type === 'info' && (
+                      <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Info className="w-6 h-6 text-blue-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className={`font-bold ${feedback.type === 'success'
+                        ? 'text-green-300'
+                        : feedback.type === 'error'
+                          ? 'text-red-300'
+                          : 'text-blue-300'
+                        }`}>
+                        {feedback.type === 'success'
+                          ? '✓ Solicitud Confirmada'
+                          : feedback.type === 'error'
+                            ? '✗ Error'
+                            : 'ℹ️ Información'}
                       </p>
                       <p className="text-sm text-gray-300 mt-1 whitespace-pre-line">{feedback.message}</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        {feedback.type === 'success' ? 'El almacén ha recibido su solicitud' : 'Intente nuevamente o contacte a soporte'}
-                      </p>
+
+                      {feedback.type === 'success' && (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+                          <Clock className="w-3 h-3" />
+                          <span>Tiempo estimado de entrega: 15-30 minutos</span>
+                        </div>
+                      )}
                     </div>
+
+                    <button
+                      onClick={clearFeedback}
+                      className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <RotateCcw className="w-4 h-4 text-gray-400" />
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -714,7 +856,21 @@ const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon,
           </div>
         )}
       </div>
+      {/* Help Section */}
+      <div className="mt-8 bg-gray-800/20 rounded-xl p-4 border border-gray-700/30">
+        <h3 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+          <Info className="w-4 h-4" />
+          Información útil
+        </h3>
+        <div className="text-xs text-gray-400 space-y-1">
+          <p>• Solo se permite una solicitud activa por material</p>
+          <p>• El almacén será notificado inmediatamente</p>
+          <p>• Tiempo de respuesta estimado: 15-30 min</p>
+          <p>• Para emergencias, contacte al supervisor</p>
+        </div>
+      </div>
     </div>
+
   );
 };
 
