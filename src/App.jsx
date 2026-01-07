@@ -482,16 +482,13 @@ const SupplyChainView = () => {
 // Component: Plant Map
 const PlantMap = ({ locationStatuses, orders }) => {
   const locations = [
-    { id: 'Estantería A', x: 25, y: 20 },
-    { id: 'Estantería B', x: 50, y: 20 },
-    { id: 'Estantería C', x: 75, y: 20 },
-    { id: 'Estantería D', x: 50, y: 70 },
+    { id: 'Estantería A', x: 35, y: 24.64 },
+    { id: 'Estantería B', x: 55.18, y: 29.64 },
+    { id: 'Estantería C', x: 56.10, y: 69.22 },
+    { id: 'Estantería D', x: 37.5, y: 66.88 },
   ];
   const handleMapClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    console.log(`Coordenadas: x: ${x.toFixed(2)}, y: ${y.toFixed(2)}`);
+    print("ashe")
   };
   // Reemplazar esta URL por tu imagen real del plano de planta
   const plantLayoutImage = "tu-plano.png";
