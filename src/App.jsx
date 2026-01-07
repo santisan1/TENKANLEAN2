@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp, getDoc } from 'firebase/firestore';
-import { Package, AlertTriangle, CheckCircle, Truck, Camera, Clock, MapPin, Activity, Wifi } from 'lucide-react';
+import { Package, AlertTriangle, CheckCircle, Truck, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Firebase Configuration
@@ -97,7 +97,7 @@ const OperatorView = () => {
 
       setFeedback({
         type: 'success',
-        message: `Pedido enviado a Almacén\n${card.partNumber} - ${card.description}`
+        message: `Pedido Enviado a Almacén\n${card.partNumber} - ${card.description}`
       });
 
       setTimeout(() => {
@@ -114,95 +114,144 @@ const OperatorView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col items-center justify-center p-6">
-      <div className="max-w-md w-full">
-        <motion.div
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="text-center mb-12"
-        >
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-500/20 rounded-2xl mb-4">
-            <Package className="w-10 h-10 text-blue-400" />
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950">
+      {/* Industrial Header */}
+      <div className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm">
+        <div className="max-w-md mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Factory className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">TTE E-KANBAN</h1>
+                <p className="text-xs text-gray-400">Bobinado • Punto de Consumo</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-400 font-medium">ONLINE</span>
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">E-Kanban TTE</h1>
-          <p className="text-gray-400">Punto de Consumo - Bobinado</p>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-md mx-auto px-6 py-8">
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="text-center mb-10"
+        >
+          <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-blue-500/10 to-blue-600/10 rounded-2xl mb-6 border border-blue-500/20">
+            <Package className="w-12 h-12 text-blue-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Escaneo de Material</h2>
+          <p className="text-gray-400 text-sm">Escanee el código QR de la tarjeta Kanban para solicitar material</p>
         </motion.div>
 
         <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
+          initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1 }}
-          className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-3xl p-8 shadow-2xl"
+          className="bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-6 shadow-2xl"
         >
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              ID de Tarjeta Kanban
-            </label>
-            <input
-              type="text"
-              value={cardId}
-              onChange={(e) => setCardId(e.target.value.toUpperCase())}
-              placeholder="MAT-001"
-              className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
-              disabled={scanning}
-            />
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-gray-300">ID de Tarjeta</label>
+              <span className="text-xs text-gray-500 font-mono">MAT-XXX</span>
+            </div>
+            <div className="relative">
+              <input
+                type="text"
+                value={cardId}
+                onChange={(e) => setCardId(e.target.value.toUpperCase())}
+                placeholder="Ingrese o escanee código"
+                className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-all duration-300 font-mono text-lg tracking-wider"
+                disabled={scanning}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="w-6 h-6 border-2 border-gray-600 rounded"></div>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-3">
-            <button
+            <motion.button
+              whileTap={{ scale: 0.98 }}
               onClick={() => handleScan(cardId)}
               disabled={!cardId || scanning}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-600 text-white font-semibold py-4 px-6 rounded-xl transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed shadow-lg flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-gray-700 disabled:to-gray-800 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 flex items-center justify-center gap-3"
             >
               {scanning ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Procesando...
+                  <span>Procesando Escaneo...</span>
                 </>
               ) : (
                 <>
                   <CheckCircle className="w-5 h-5" />
-                  Confirmar Pedido
+                  <span>CONFIRMAR PEDIDO</span>
                 </>
               )}
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
+              whileTap={{ scale: 0.98 }}
               onClick={simulateScan}
               disabled={scanning}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-3 px-6 rounded-xl transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-3 px-6 rounded-xl transition-colors border border-gray-700 flex items-center justify-center gap-3"
             >
               <Camera className="w-5 h-5" />
-              Simular Escaneo QR
-            </button>
+              <span>Simular Escaneo QR</span>
+            </motion.button>
           </div>
 
           <AnimatePresence>
             {feedback && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className={`mt-6 p-4 rounded-xl flex items-start gap-3 ${feedback.type === 'success'
-                  ? 'bg-green-500/20 border border-green-500/30'
-                  : 'bg-red-500/20 border border-red-500/30'
-                  }`}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-6 overflow-hidden"
               >
-                {feedback.type === 'success' ? (
-                  <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-0.5" />
-                ) : (
-                  <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <p className={`font-semibold ${feedback.type === 'success' ? 'text-green-300' : 'text-red-300'}`}>
-                    {feedback.type === 'success' ? '¡Pedido Enviado!' : 'Error'}
-                  </p>
-                  <p className="text-sm text-gray-300 whitespace-pre-line">{feedback.message}</p>
+                <div className={`p-4 rounded-xl border ${feedback.type === 'success'
+                  ? 'bg-green-500/10 border-green-500/30'
+                  : 'bg-red-500/10 border-red-500/30'
+                  }`}>
+                  <div className="flex items-start gap-3">
+                    {feedback.type === 'success' ? (
+                      <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <CheckCircle className="w-6 h-6 text-green-400" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle className="w-6 h-6 text-red-400" />
+                      </div>
+                    )}
+                    <div>
+                      <p className={`font-bold ${feedback.type === 'success' ? 'text-green-300' : 'text-red-300'}`}>
+                        {feedback.type === 'success' ? '✓ Pedido Confirmado' : '✗ Error'}
+                      </p>
+                      <p className="text-sm text-gray-300 mt-1 whitespace-pre-line">{feedback.message}</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        {feedback.type === 'success' ? 'El almacén ha recibido su solicitud' : 'Intente nuevamente o contacte a soporte'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
+
+        {/* Footer Info */}
+        <div className="mt-8 text-center">
+          <div className="inline-flex items-center gap-2 text-gray-500 text-sm">
+            <Clock className="w-4 h-4" />
+            <span>Actualizado en tiempo real</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -213,11 +262,16 @@ const SupplyChainView = () => {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ pending: 0, inTransit: 0, delivered: 0 });
   const [isConnected, setIsConnected] = useState(false);
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     console.log('Setting up Firestore listener...');
 
-    // SIMPLIFIED QUERY - No orderBy to avoid index issues
     const q = query(
       collection(db, 'active_orders'),
       where('status', 'in', ['PENDING', 'IN_TRANSIT'])
@@ -230,14 +284,12 @@ const SupplyChainView = () => {
 
         const ordersData = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Order data:', doc.id, data);
           return {
             id: doc.id,
             ...data
           };
         });
 
-        // Sort manually by timestamp if available
         ordersData.sort((a, b) => {
           if (!a.timestamp || !b.timestamp) return 0;
           return b.timestamp.toMillis() - a.timestamp.toMillis();
@@ -248,7 +300,6 @@ const SupplyChainView = () => {
         const pending = ordersData.filter(o => o.status === 'PENDING').length;
         const inTransit = ordersData.filter(o => o.status === 'IN_TRANSIT').length;
 
-        console.log('Stats:', { pending, inTransit });
         setStats({ pending, inTransit, delivered: 0 });
       },
       (error) => {
@@ -258,14 +309,12 @@ const SupplyChainView = () => {
     );
 
     return () => {
-      console.log('Cleaning up Firestore listener');
       unsubscribe();
     };
   }, []);
 
   const handleStatusChange = async (orderId, newStatus) => {
     try {
-      console.log('Updating order:', orderId, 'to status:', newStatus);
       const orderRef = doc(db, 'active_orders', orderId);
       const updateData = { status: newStatus };
 
@@ -276,13 +325,11 @@ const SupplyChainView = () => {
       }
 
       await updateDoc(orderRef, updateData);
-      console.log('Order updated successfully');
     } catch (error) {
       console.error('Error updating status:', error);
     }
   };
 
-  // Calculate location statuses for map
   const locationStatuses = orders.reduce((acc, order) => {
     const loc = order.location || 'Unknown';
     if (!acc[loc]) {
@@ -294,76 +341,115 @@ const SupplyChainView = () => {
   }, {});
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-blue-900 to-blue-800 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+    <div className="min-h-screen bg-gray-950">
+      {/* Top Navigation Bar */}
+      <div className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800">
+        <div className="max-w-7xl mx-auto px-6 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-white/10 p-2 rounded-lg">
-                <Activity className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Dashboard de Almacén</h1>
-                <p className="text-blue-200 text-sm">Sistema E-Kanban - Supply Chain TTE</p>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Factory className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white">TTE E-KANBAN</h1>
+                  <p className="text-xs text-gray-400">Dashboard • Supply Chain</p>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Connection Status */}
-              <motion.div
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isConnected ? 'bg-green-500/20' : 'bg-red-500/20'
-                  }`}
-                animate={{ opacity: isConnected ? 1 : 0.6 }}
-              >
-                <motion.div
-                  animate={{ scale: isConnected ? [1, 1.2, 1] : 1 }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <Wifi className={`w-4 h-4 ${isConnected ? 'text-green-300' : 'text-red-300'}`} />
-                </motion.div>
-                <span className={`text-sm font-semibold ${isConnected ? 'text-green-200' : 'text-red-200'}`}>
-                  {isConnected ? 'CONECTADO (EN VIVO)' : 'DESCONECTADO'}
+
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className={`text-xs font-medium ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  {isConnected ? 'CONECTADO' : 'DESCONECTADO'}
                 </span>
-              </motion.div>
+              </div>
               <div className="text-right">
-                <p className="text-blue-200 text-sm">Última actualización</p>
-                <p className="text-white font-semibold">{new Date().toLocaleTimeString('es-AR')}</p>
+                <div className="text-sm text-gray-400">Hora de planta</div>
+                <div className="font-mono text-lg font-bold text-white">
+                  {time.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
+                  <Bell className="w-5 h-5 text-gray-400" />
+                </button>
+                <button className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
+                  <Settings className="w-5 h-5 text-gray-400" />
+                </button>
+                <div className="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <StatCard
-            icon={<Clock className="w-6 h-6" />}
-            label="Pedidos Pendientes"
-            value={stats.pending}
-            bgColor="bg-red-50"
-            iconColor="bg-red-500"
-            textColor="text-red-700"
-          />
-          <StatCard
-            icon={<Truck className="w-6 h-6" />}
-            label="En Tránsito"
-            value={stats.inTransit}
-            bgColor="bg-yellow-50"
-            iconColor="bg-yellow-500"
-            textColor="text-yellow-700"
-          />
-          <StatCard
-            icon={<CheckCircle className="w-6 h-6" />}
-            label="Completados Hoy"
-            value={stats.delivered}
-            bgColor="bg-green-50"
-            iconColor="bg-green-500"
-            textColor="text-green-700"
-          />
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="col-span-1 md:col-span-2">
+            <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Visión General</h2>
+                  <p className="text-sm text-gray-400">Estado actual del flujo de materiales</p>
+                </div>
+                <BarChart3 className="w-6 h-6 text-blue-400" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <StatCard
+                  icon={<Clock className="w-5 h-5" />}
+                  label="Pendientes"
+                  value={stats.pending}
+                  color="red"
+                  trend={stats.pending > 5 ? "+2" : null}
+                />
+                <StatCard
+                  icon={<Truck className="w-5 h-5" />}
+                  label="En Tránsito"
+                  value={stats.inTransit}
+                  color="yellow"
+                />
+                <StatCard
+                  icon={<CheckCircle className="w-5 h-5" />}
+                  label="Entregados Hoy"
+                  value={stats.delivered}
+                  color="green"
+                  trend="+12"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-span-1 md:col-span-2">
+            <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Rendimiento</h2>
+                  <p className="text-sm text-gray-400">Métricas de tiempo de entrega</p>
+                </div>
+                <Activity className="w-6 h-6 text-green-400" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-800/50 rounded-lg p-4">
+                  <div className="text-3xl font-bold text-white">15:24</div>
+                  <div className="text-sm text-gray-400">Tiempo promedio</div>
+                  <div className="text-xs text-green-400 mt-1">↓ 2.3min desde ayer</div>
+                </div>
+                <div className="bg-gray-800/50 rounded-lg p-4">
+                  <div className="text-3xl font-bold text-white">98.2%</div>
+                  <div className="text-sm text-gray-400">Tasa de cumplimiento</div>
+                  <div className="text-xs text-green-400 mt-1">↑ 0.8% desde ayer</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Plant Map */}
+        {/* Plant Layout Map */}
         <PlantMap locationStatuses={locationStatuses} orders={orders} />
 
         {/* Orders Board */}
@@ -375,6 +461,7 @@ const SupplyChainView = () => {
             onAction={(id) => handleStatusChange(id, 'IN_TRANSIT')}
             actionLabel="Despachar"
             actionIcon={<Truck className="w-4 h-4" />}
+            color="red"
           />
 
           <OrderColumn
@@ -382,8 +469,9 @@ const SupplyChainView = () => {
             status="IN_TRANSIT"
             orders={orders.filter(o => o.status === 'IN_TRANSIT')}
             onAction={(id) => handleStatusChange(id, 'DELIVERED')}
-            actionLabel="Entregar"
+            actionLabel="Marcar Entregado"
             actionIcon={<CheckCircle className="w-4 h-4" />}
+            color="yellow"
           />
         </div>
       </div>
@@ -393,60 +481,61 @@ const SupplyChainView = () => {
 
 // Component: Plant Map
 const PlantMap = ({ locationStatuses, orders }) => {
-  // Define locations based on actual data
-  const baseLocations = [
-    { id: 'Bobinado A', x: 20, y: 30 },
-    { id: 'Bobinado B', x: 50, y: 30 },
-    { id: 'Bobinado C', x: 80, y: 30 },
-    { id: 'Bobinado D', x: 35, y: 70 },
-    { id: 'Bobinado E', x: 65, y: 70 }
+  const locations = [
+    { id: 'Bobinado A', x: 25, y: 20 },
+    { id: 'Bobinado B', x: 50, y: 20 },
+    { id: 'Bobinado C', x: 75, y: 20 },
+    { id: 'Almacén', x: 50, y: 70 },
+    { id: 'Montaje', x: 25, y: 50 },
+    { id: 'Control Calidad', x: 75, y: 50 }
   ];
 
-  // Get unique locations from orders
-  const activeLocations = [...new Set(orders.map(o => o.location).filter(Boolean))];
-
-  // Merge base locations with active ones
-  const allLocations = [...baseLocations];
-  activeLocations.forEach((loc, index) => {
-    if (!allLocations.find(l => l.id === loc)) {
-      allLocations.push({
-        id: loc,
-        x: 20 + (index * 20),
-        y: 50
-      });
-    }
-  });
+  // Reemplazar esta URL por tu imagen real del plano de planta
+  const plantLayoutImage = "https://images.unsplash.com/photo-1560518883-ce09059eeffa?ixlib=rb-1.2.1&auto=format&fit=crop&w=1200&q=80";
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <MapPin className="w-5 h-5 text-gray-700" />
-          <h2 className="text-lg font-bold text-gray-900">Mapa de Planta - Bobinado</h2>
+    <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+            <MapPin className="w-5 h-5 text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Mapa de Planta</h2>
+            <p className="text-sm text-gray-400">Estado en tiempo real por área</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <span className="text-gray-600">Pendiente</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg">
+            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            <span className="text-xs text-red-300">Pendiente</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <span className="text-gray-600">En Tránsito</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 rounded-lg">
+            <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+            <span className="text-xs text-yellow-300">En Tránsito</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gray-300"></div>
-            <span className="text-gray-600">Normal</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 rounded-lg">
+            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+            <span className="text-xs text-gray-300">Normal</span>
           </div>
         </div>
       </div>
 
-      <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-gray-300 h-80 overflow-hidden">
-        {/* Grid Background */}
-        <div className="absolute inset-0 opacity-20">
+      <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
+        {/* Imagen del plano de planta */}
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${plantLayoutImage})` }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-gray-950/60 to-gray-950/30"></div>
+        </div>
+
+        {/* Overlay de grid sutil */}
+        <div className="absolute inset-0 opacity-10">
           <svg className="w-full h-full">
             <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="gray" strokeWidth="1" />
+              <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+                <path d="M 80 0 L 0 0 0 80" fill="none" stroke="white" strokeWidth="1" />
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill="url(#grid)" />
@@ -454,17 +543,20 @@ const PlantMap = ({ locationStatuses, orders }) => {
         </div>
 
         {/* Location Points */}
-        {allLocations.map(location => {
+        {locations.map(location => {
           const status = locationStatuses[location.id];
-          let color = 'bg-gray-300';
+          let color = 'bg-gray-600';
           let shouldPulse = false;
+          let ringColor = 'ring-gray-500';
 
           if (status?.pending) {
             color = 'bg-red-500';
             shouldPulse = true;
+            ringColor = 'ring-red-500/50';
           } else if (status?.inTransit) {
             color = 'bg-yellow-500';
             shouldPulse = true;
+            ringColor = 'ring-yellow-500/50';
           }
 
           return (
@@ -474,56 +566,124 @@ const PlantMap = ({ locationStatuses, orders }) => {
               style={{ left: `${location.x}%`, top: `${location.y}%` }}
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              transition={{ delay: 0.1 }}
+              whileHover={{ scale: 1.1 }}
             >
               <div className="relative -translate-x-1/2 -translate-y-1/2">
                 {shouldPulse && (
                   <motion.div
                     className={`absolute inset-0 ${color} rounded-full opacity-75`}
-                    animate={{ scale: [1, 2.5, 2.5], opacity: [0.75, 0, 0] }}
+                    animate={{ scale: [1, 1.5, 1.5], opacity: [0.5, 0, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
                   />
                 )}
-                <div className={`w-5 h-5 ${color} rounded-full border-3 border-white shadow-lg`} />
-                <div className="absolute top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                  <div className="bg-white px-3 py-1 rounded-lg shadow-md border border-gray-200">
-                    <p className="text-xs font-bold text-gray-900">{location.id}</p>
+                <div className={`relative z-10 ${ringColor} ring-4`}>
+                  <div className={`w-6 h-6 ${color} rounded-full flex items-center justify-center shadow-lg`}>
+                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                </div>
+                <div className="absolute top-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="bg-gray-900/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-gray-700 min-w-[120px]">
+                    <p className="text-xs font-bold text-white text-center">{location.id}</p>
+                    <div className="flex items-center justify-center gap-2 mt-1">
+                      {status?.pending && (
+                        <span className="text-xs text-red-400 font-medium">Pendiente</span>
+                      )}
+                      {status?.inTransit && (
+                        <span className="text-xs text-yellow-400 font-medium">En tránsito</span>
+                      )}
+                      {!status?.pending && !status?.inTransit && (
+                        <span className="text-xs text-gray-400 font-medium">Normal</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
             </motion.div>
           );
         })}
+
+        {/* Legend Overlay */}
+        <div className="absolute bottom-4 left-4 bg-gray-900/90 backdrop-blur-sm rounded-lg p-4 border border-gray-700">
+          <h3 className="text-sm font-bold text-white mb-2">Leyenda de Áreas</h3>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+              <span className="text-xs text-gray-300">Producción</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <span className="text-xs text-gray-300">Logística</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+              <span className="text-xs text-gray-300">Control</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
 // Component: Stat Card
-const StatCard = ({ icon, label, value, bgColor, iconColor, textColor }) => {
+const StatCard = ({ icon, label, value, color, trend }) => {
+  const colorClasses = {
+    red: 'bg-red-500/10 border-red-500/20',
+    yellow: 'bg-yellow-500/10 border-yellow-500/20',
+    green: 'bg-green-500/10 border-green-500/20',
+    blue: 'bg-blue-500/10 border-blue-500/20'
+  };
+
+  const iconColorClasses = {
+    red: 'text-red-400',
+    yellow: 'text-yellow-400',
+    green: 'text-green-400',
+    blue: 'text-blue-400'
+  };
+
   return (
-    <div className={`${bgColor} rounded-xl shadow-sm p-6 border border-gray-200`}>
-      <div className={`inline-flex items-center justify-center w-12 h-12 ${iconColor} rounded-lg mb-3 text-white shadow-md`}>
-        {icon}
+    <div className={`${colorClasses[color]} rounded-xl border p-4`}>
+      <div className="flex items-center justify-between">
+        <div className={`w-10 h-10 rounded-lg ${colorClasses[color]} flex items-center justify-center`}>
+          <div className={iconColorClasses[color]}>
+            {icon}
+          </div>
+        </div>
+        {trend && (
+          <div className={`px-2 py-1 rounded text-xs font-bold ${trend.startsWith('+') ? 'text-green-400 bg-green-500/10' : 'text-red-400 bg-red-500/10'}`}>
+            {trend}
+          </div>
+        )}
       </div>
-      <p className="text-gray-600 text-sm font-medium mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${textColor}`}>{value}</p>
+      <div className="mt-3">
+        <div className="text-2xl font-bold text-white">{value}</div>
+        <div className="text-sm text-gray-400">{label}</div>
+      </div>
     </div>
   );
 };
 
 // Component: Order Column
-const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon }) => {
-  return (
-    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-      <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-        {title}
-        <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-semibold shadow-sm">
-          {orders.length}
-        </span>
-      </h2>
+const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon, color }) => {
+  const colorClasses = {
+    red: 'border-red-500/20',
+    yellow: 'border-yellow-500/20',
+    green: 'border-green-500/20'
+  };
 
-      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+  return (
+    <div className={`bg-gray-900/50 backdrop-blur-sm rounded-xl border ${colorClasses[color]} p-6`}>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-bold text-white">{title}</h2>
+          <p className="text-sm text-gray-400">Actualizado en tiempo real</p>
+        </div>
+        <div className="bg-gray-800 text-white px-4 py-2 rounded-lg font-bold">
+          {orders.length}
+        </div>
+      </div>
+
+      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
         <AnimatePresence>
           {orders.map(order => (
             <OrderCard
@@ -532,14 +692,18 @@ const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon 
               onAction={onAction}
               actionLabel={actionLabel}
               actionIcon={actionIcon}
+              color={color}
             />
           ))}
         </AnimatePresence>
 
         {orders.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
-            <Package className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No hay pedidos {status === 'PENDING' ? 'pendientes' : 'en tránsito'}</p>
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Package className="w-8 h-8 text-gray-500" />
+            </div>
+            <p className="text-gray-500 font-medium">Sin pedidos {status === 'PENDING' ? 'pendientes' : 'en tránsito'}</p>
+            <p className="text-sm text-gray-600 mt-1">Todos los pedidos están al día</p>
           </div>
         )}
       </div>
@@ -548,8 +712,20 @@ const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon 
 };
 
 // Component: Order Card
-const OrderCard = ({ order, onAction, actionLabel, actionIcon }) => {
+const OrderCard = ({ order, onAction, actionLabel, actionIcon, color }) => {
   const urgent = isUrgent(order.timestamp, order.status);
+
+  const colorClasses = {
+    red: 'bg-red-500',
+    yellow: 'bg-yellow-500',
+    green: 'bg-green-500'
+  };
+
+  const buttonClasses = {
+    red: 'bg-red-600 hover:bg-red-700 shadow-red-500/20',
+    yellow: 'bg-yellow-600 hover:bg-yellow-700 shadow-yellow-500/20',
+    green: 'bg-green-600 hover:bg-green-700 shadow-green-500/20'
+  };
 
   return (
     <motion.div
@@ -557,42 +733,55 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -100 }}
-      className={`bg-gray-50 rounded-xl p-4 border-2 ${urgent ? 'border-red-400' : 'border-gray-200'} hover:shadow-md transition-shadow`}
+      className={`bg-gray-800/50 backdrop-blur-sm rounded-xl border ${urgent ? 'border-red-500/50' : 'border-gray-700'} p-4 hover:border-gray-600 transition-colors`}
     >
       {urgent && (
         <motion.div
-          className="flex items-center gap-2 text-red-600 text-sm font-semibold mb-2 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200"
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-3 py-2 rounded-lg mb-3"
           animate={{ opacity: [1, 0.6, 1] }}
-          transition={{ duration: 1, repeat: Infinity }}
+          transition={{ duration: 1.5, repeat: Infinity }}
         >
-          <AlertTriangle className="w-4 h-4" />
-          ¡URGENTE! +15 min
+          <AlertTriangle className="w-4 h-4 text-red-400" />
+          <span className="text-sm font-bold text-red-400">ATENCIÓN: +15 minutos pendiente</span>
         </motion.div>
       )}
 
-      <div className="mb-3">
-        <p className="font-bold text-gray-900 text-lg">{order.partNumber}</p>
-        <p className="text-sm text-gray-600">{order.description}</p>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className={`w-2 h-2 rounded-full ${colorClasses[color]} animate-pulse`}></div>
+            <span className="font-mono font-bold text-white text-lg">{order.partNumber}</span>
+          </div>
+          <p className="text-gray-300">{order.description}</p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-gray-500">Hora</div>
+          <div className="font-mono text-sm font-bold text-white">{formatTime(order.timestamp)}</div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-3 bg-white px-3 py-2 rounded-lg border border-gray-200">
-        <span className="flex items-center gap-1 font-medium">
-          <MapPin className="w-3 h-3" />
-          {order.location}
-        </span>
-        <span className="flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          {formatTime(order.timestamp)}
-        </span>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <div className="text-xs text-gray-400 mb-1">Ubicación</div>
+          <div className="flex items-center gap-2">
+            <MapPin className="w-3 h-3 text-gray-400" />
+            <span className="font-medium text-white">{order.location}</span>
+          </div>
+        </div>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <div className="text-xs text-gray-400 mb-1">Pack Estándar</div>
+          <div className="font-medium text-white">{order.standardPack} unidades</div>
+        </div>
       </div>
 
-      <button
+      <motion.button
+        whileTap={{ scale: 0.98 }}
         onClick={() => onAction(order.id)}
-        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 transform hover:scale-105"
+        className={`w-full ${buttonClasses[color]} text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3`}
       >
         {actionIcon}
         {actionLabel}
-      </button>
+      </motion.button>
     </motion.div>
   );
 };
