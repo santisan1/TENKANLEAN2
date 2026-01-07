@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, query, where, orderBy, serverTimestamp, getDoc } from 'firebase/firestore';
-import { Package, AlertTriangle, CheckCircle, Truck, Camera, Clock, MapPin, Activity } from 'lucide-react';
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp, getDoc } from 'firebase/firestore';
+import { Package, AlertTriangle, CheckCircle, Truck, Camera, Clock, MapPin, Activity, Wifi } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Firebase Configuration
@@ -37,6 +37,25 @@ const OperatorView = () => {
   const [cardId, setCardId] = useState('');
   const [scanning, setScanning] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+
+  // AUTO-SUBMIT FROM URL PARAMETER
+  useEffect(() => {
+    if (autoSubmitted) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const idFromUrl = params.get('id');
+
+    if (idFromUrl) {
+      setCardId(idFromUrl.toUpperCase());
+      setAutoSubmitted(true);
+
+      // Auto-submit after a brief delay
+      setTimeout(() => {
+        handleScan(idFromUrl.toUpperCase());
+      }, 500);
+    }
+  }, [autoSubmitted]);
 
   const simulateScan = () => {
     const mockId = `MAT-${Math.floor(Math.random() * 100).toString().padStart(3, '0')}`;
@@ -45,6 +64,8 @@ const OperatorView = () => {
   };
 
   const handleScan = async (scannedId) => {
+    if (!scannedId) return;
+
     setScanning(true);
     setFeedback(null);
 
@@ -60,7 +81,8 @@ const OperatorView = () => {
 
       const card = cardSnap.data();
 
-      await addDoc(collection(db, 'active_orders'), {
+      // Create order in Firestore
+      const docRef = await addDoc(collection(db, 'active_orders'), {
         cardId: scannedId,
         partNumber: card.partNumber,
         description: card.description,
@@ -70,6 +92,8 @@ const OperatorView = () => {
         status: 'PENDING',
         createdAt: serverTimestamp()
       });
+
+      console.log('Order created with ID:', docRef.id);
 
       setFeedback({
         type: 'success',
@@ -82,8 +106,8 @@ const OperatorView = () => {
       }, 3000);
 
     } catch (error) {
-      console.error('Error:', error);
-      setFeedback({ type: 'error', message: 'Error al procesar el pedido' });
+      console.error('Error creating order:', error);
+      setFeedback({ type: 'error', message: 'Error al procesar el pedido: ' + error.message });
     }
 
     setScanning(false);
@@ -188,31 +212,60 @@ const OperatorView = () => {
 const SupplyChainView = () => {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ pending: 0, inTransit: 0, delivered: 0 });
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    console.log('Setting up Firestore listener...');
+
+    // SIMPLIFIED QUERY - No orderBy to avoid index issues
     const q = query(
       collection(db, 'active_orders'),
-      where('status', 'in', ['PENDING', 'IN_TRANSIT']),
-      orderBy('timestamp', 'desc')
+      where('status', 'in', ['PENDING', 'IN_TRANSIT'])
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setOrders(ordersData);
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        console.log('Snapshot received:', snapshot.size, 'documents');
+        setIsConnected(true);
 
-      const pending = ordersData.filter(o => o.status === 'PENDING').length;
-      const inTransit = ordersData.filter(o => o.status === 'IN_TRANSIT').length;
-      setStats({ pending, inTransit, delivered: 0 });
-    });
+        const ordersData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('Order data:', doc.id, data);
+          return {
+            id: doc.id,
+            ...data
+          };
+        });
 
-    return () => unsubscribe();
+        // Sort manually by timestamp if available
+        ordersData.sort((a, b) => {
+          if (!a.timestamp || !b.timestamp) return 0;
+          return b.timestamp.toMillis() - a.timestamp.toMillis();
+        });
+
+        setOrders(ordersData);
+
+        const pending = ordersData.filter(o => o.status === 'PENDING').length;
+        const inTransit = ordersData.filter(o => o.status === 'IN_TRANSIT').length;
+
+        console.log('Stats:', { pending, inTransit });
+        setStats({ pending, inTransit, delivered: 0 });
+      },
+      (error) => {
+        console.error('Firestore listener error:', error);
+        setIsConnected(false);
+      }
+    );
+
+    return () => {
+      console.log('Cleaning up Firestore listener');
+      unsubscribe();
+    };
   }, []);
 
   const handleStatusChange = async (orderId, newStatus) => {
     try {
+      console.log('Updating order:', orderId, 'to status:', newStatus);
       const orderRef = doc(db, 'active_orders', orderId);
       const updateData = { status: newStatus };
 
@@ -223,6 +276,7 @@ const SupplyChainView = () => {
       }
 
       await updateDoc(orderRef, updateData);
+      console.log('Order updated successfully');
     } catch (error) {
       console.error('Error updating status:', error);
     }
@@ -230,18 +284,19 @@ const SupplyChainView = () => {
 
   // Calculate location statuses for map
   const locationStatuses = orders.reduce((acc, order) => {
-    if (!acc[order.location]) {
-      acc[order.location] = { pending: false, inTransit: false };
+    const loc = order.location || 'Unknown';
+    if (!acc[loc]) {
+      acc[loc] = { pending: false, inTransit: false };
     }
-    if (order.status === 'PENDING') acc[order.location].pending = true;
-    if (order.status === 'IN_TRANSIT') acc[order.location].inTransit = true;
+    if (order.status === 'PENDING') acc[loc].pending = true;
+    if (order.status === 'IN_TRANSIT') acc[loc].inTransit = true;
     return acc;
   }, {});
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-blue-900 to-blue-800 shadow-md">
+      <header className="bg-gradient-to-r from-blue-900 to-blue-800 shadow-lg">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -253,9 +308,27 @@ const SupplyChainView = () => {
                 <p className="text-blue-200 text-sm">Sistema E-Kanban - Supply Chain TTE</p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-blue-200 text-sm">Última actualización</p>
-              <p className="text-white font-semibold">{new Date().toLocaleTimeString('es-AR')}</p>
+            <div className="flex items-center gap-4">
+              {/* Connection Status */}
+              <motion.div
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isConnected ? 'bg-green-500/20' : 'bg-red-500/20'
+                  }`}
+                animate={{ opacity: isConnected ? 1 : 0.6 }}
+              >
+                <motion.div
+                  animate={{ scale: isConnected ? [1, 1.2, 1] : 1 }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <Wifi className={`w-4 h-4 ${isConnected ? 'text-green-300' : 'text-red-300'}`} />
+                </motion.div>
+                <span className={`text-sm font-semibold ${isConnected ? 'text-green-200' : 'text-red-200'}`}>
+                  {isConnected ? 'CONECTADO (EN VIVO)' : 'DESCONECTADO'}
+                </span>
+              </motion.div>
+              <div className="text-right">
+                <p className="text-blue-200 text-sm">Última actualización</p>
+                <p className="text-white font-semibold">{new Date().toLocaleTimeString('es-AR')}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -268,7 +341,6 @@ const SupplyChainView = () => {
             icon={<Clock className="w-6 h-6" />}
             label="Pedidos Pendientes"
             value={stats.pending}
-            color="red"
             bgColor="bg-red-50"
             iconColor="bg-red-500"
             textColor="text-red-700"
@@ -277,7 +349,6 @@ const SupplyChainView = () => {
             icon={<Truck className="w-6 h-6" />}
             label="En Tránsito"
             value={stats.inTransit}
-            color="yellow"
             bgColor="bg-yellow-50"
             iconColor="bg-yellow-500"
             textColor="text-yellow-700"
@@ -286,7 +357,6 @@ const SupplyChainView = () => {
             icon={<CheckCircle className="w-6 h-6" />}
             label="Completados Hoy"
             value={stats.delivered}
-            color="green"
             bgColor="bg-green-50"
             iconColor="bg-green-500"
             textColor="text-green-700"
@@ -294,7 +364,7 @@ const SupplyChainView = () => {
         </div>
 
         {/* Plant Map */}
-        <PlantMap locationStatuses={locationStatuses} />
+        <PlantMap locationStatuses={locationStatuses} orders={orders} />
 
         {/* Orders Board */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
@@ -322,8 +392,9 @@ const SupplyChainView = () => {
 };
 
 // Component: Plant Map
-const PlantMap = ({ locationStatuses }) => {
-  const locations = [
+const PlantMap = ({ locationStatuses, orders }) => {
+  // Define locations based on actual data
+  const baseLocations = [
     { id: 'Bobinado A', x: 20, y: 30 },
     { id: 'Bobinado B', x: 50, y: 30 },
     { id: 'Bobinado C', x: 80, y: 30 },
@@ -331,8 +402,23 @@ const PlantMap = ({ locationStatuses }) => {
     { id: 'Bobinado E', x: 65, y: 70 }
   ];
 
+  // Get unique locations from orders
+  const activeLocations = [...new Set(orders.map(o => o.location).filter(Boolean))];
+
+  // Merge base locations with active ones
+  const allLocations = [...baseLocations];
+  activeLocations.forEach((loc, index) => {
+    if (!allLocations.find(l => l.id === loc)) {
+      allLocations.push({
+        id: loc,
+        x: 20 + (index * 20),
+        y: 50
+      });
+    }
+  });
+
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-gray-700" />
@@ -354,7 +440,7 @@ const PlantMap = ({ locationStatuses }) => {
         </div>
       </div>
 
-      <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 h-80 overflow-hidden">
+      <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-gray-300 h-80 overflow-hidden">
         {/* Grid Background */}
         <div className="absolute inset-0 opacity-20">
           <svg className="w-full h-full">
@@ -368,7 +454,7 @@ const PlantMap = ({ locationStatuses }) => {
         </div>
 
         {/* Location Points */}
-        {locations.map(location => {
+        {allLocations.map(location => {
           const status = locationStatuses[location.id];
           let color = 'bg-gray-300';
           let shouldPulse = false;
@@ -394,14 +480,14 @@ const PlantMap = ({ locationStatuses }) => {
                 {shouldPulse && (
                   <motion.div
                     className={`absolute inset-0 ${color} rounded-full opacity-75`}
-                    animate={{ scale: [1, 2, 2], opacity: [0.75, 0, 0] }}
+                    animate={{ scale: [1, 2.5, 2.5], opacity: [0.75, 0, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
                   />
                 )}
-                <div className={`w-4 h-4 ${color} rounded-full border-2 border-white shadow-lg`} />
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                  <div className="bg-white px-2 py-1 rounded shadow-sm border border-gray-200">
-                    <p className="text-xs font-semibold text-gray-900">{location.id}</p>
+                <div className={`w-5 h-5 ${color} rounded-full border-3 border-white shadow-lg`} />
+                <div className="absolute top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="bg-white px-3 py-1 rounded-lg shadow-md border border-gray-200">
+                    <p className="text-xs font-bold text-gray-900">{location.id}</p>
                   </div>
                 </div>
               </div>
@@ -416,8 +502,8 @@ const PlantMap = ({ locationStatuses }) => {
 // Component: Stat Card
 const StatCard = ({ icon, label, value, bgColor, iconColor, textColor }) => {
   return (
-    <div className={`${bgColor} rounded-lg shadow-sm p-6 border border-gray-200`}>
-      <div className={`inline-flex items-center justify-center w-12 h-12 ${iconColor} rounded-lg mb-3 text-white`}>
+    <div className={`${bgColor} rounded-xl shadow-sm p-6 border border-gray-200`}>
+      <div className={`inline-flex items-center justify-center w-12 h-12 ${iconColor} rounded-lg mb-3 text-white shadow-md`}>
         {icon}
       </div>
       <p className="text-gray-600 text-sm font-medium mb-1">{label}</p>
@@ -429,15 +515,15 @@ const StatCard = ({ icon, label, value, bgColor, iconColor, textColor }) => {
 // Component: Order Column
 const OrderColumn = ({ title, status, orders, onAction, actionLabel, actionIcon }) => {
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
       <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
         {title}
-        <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-semibold">
+        <span className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-semibold shadow-sm">
           {orders.length}
         </span>
       </h2>
 
-      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
         <AnimatePresence>
           {orders.map(order => (
             <OrderCard
@@ -471,12 +557,12 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -100 }}
-      className={`bg-gray-50 rounded-lg p-4 border-2 ${urgent ? 'border-red-400' : 'border-gray-200'} hover:shadow-md transition-shadow`}
+      className={`bg-gray-50 rounded-xl p-4 border-2 ${urgent ? 'border-red-400' : 'border-gray-200'} hover:shadow-md transition-shadow`}
     >
       {urgent && (
         <motion.div
-          className="flex items-center gap-2 text-red-600 text-sm font-semibold mb-2 bg-red-50 px-2 py-1 rounded"
-          animate={{ opacity: [1, 0.5, 1] }}
+          className="flex items-center gap-2 text-red-600 text-sm font-semibold mb-2 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200"
+          animate={{ opacity: [1, 0.6, 1] }}
           transition={{ duration: 1, repeat: Infinity }}
         >
           <AlertTriangle className="w-4 h-4" />
@@ -489,8 +575,8 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon }) => {
         <p className="text-sm text-gray-600">{order.description}</p>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-3 bg-white px-3 py-2 rounded">
-        <span className="flex items-center gap-1">
+      <div className="flex items-center justify-between text-xs text-gray-500 mb-3 bg-white px-3 py-2 rounded-lg border border-gray-200">
+        <span className="flex items-center gap-1 font-medium">
           <MapPin className="w-3 h-3" />
           {order.location}
         </span>
@@ -502,7 +588,7 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon }) => {
 
       <button
         onClick={() => onAction(order.id)}
-        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"
+        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 transform hover:scale-105"
       >
         {actionIcon}
         {actionLabel}
