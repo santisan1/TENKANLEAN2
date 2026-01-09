@@ -9,9 +9,15 @@ import {
 import {
   getAuth, signInWithEmailAndPassword, signOut,
   onAuthStateChanged, setPersistence, browserLocalPersistence
-} from 'firebase/auth'; import { Package, AlertTriangle, LogOut, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
+} from 'firebase/auth';
+import { Package, AlertTriangle, LogOut, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import {
+  Package, AlertTriangle, CheckCircle, Truck, Info, RotateCcw,
+  Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse,
+  Settings, Bell, User, BarChart3, LogOut // Agregá Settings y LogOut aquí
+} from 'lucide-react';
 // Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgf9gtc9NZbJXxODxVWfB17Y81geUfo",
