@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDoc, getDocs, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { Package, AlertTriangle, CheckCircle, Truck, Info, Camera, Clock, MapPin, Activity, Wifi, Factory, LogOut, User, BarChart3, TrendingUp, Award, Zap } from 'lucide-react';
+import { Package, AlertTriangle, CheckCircle, Bell, Truck, Info, Camera, Clock, MapPin, Activity, Wifi, Factory, LogOut, User, BarChart3, TrendingUp, Award, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const firebaseConfig = {
