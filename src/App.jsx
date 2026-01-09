@@ -280,24 +280,26 @@ const KPIView = ({ currentUser }) => {
         // Dentro de tu fetchKPIs, después de obtener los pedidos:
 
         const processedStats = deliveredOrders.map(order => {
-          const duration = (order.deliveredAt.toMillis() - order.timestamp.toMillis()) / 60000;
-
-          // 1. Buscamos los datos maestros del material (complexity y target)
-          // Nota: Deberías traer los materiales de kanban_cards previamente
-          const materialMaster = materials.find(m => m.partNumber === order.partNumber) || {};
-
-          const complexity = materialMaster.complexityWeight || 1;
-          const target = materialMaster.targetLeadTime || 30; // 30 min por defecto
+          const complexity = parseInt(order.complexityWeight) || 1;
+          const target = parseInt(order.targetLeadTime) || 30;
+          const actualTime = order.finalLeadTime || 0;
 
           return {
             ...order,
-            duration,
-            complexity,
-            // Un pedido es exitoso si se entregó antes del target
-            isSuccess: duration <= target,
-            // Puntos de esfuerzo: Dificultad x Entrega exitosa
-            effortPoints: complexity * (duration <= target ? 1.5 : 1)
+            onTime: actualTime <= target,
+            // Justica Operativa: El que entrega algo de 100kg (Complejidad 5) suma más puntos
+            // Si lo entrega a tiempo, sumamos bonus del 50% de puntos
+            effortPoints: complexity * (actualTime <= target ? 1.5 : 1)
           };
+        });
+
+        // KPI: Porcentaje de éxito sobre SLA
+        const slaSuccess = Math.round((processedStats.filter(s => s.onTime).length / processedStats.length) * 100) || 0;
+
+        // KPI: Power Ranking por Esfuerzo (No por cantidad)
+        const ranking = {};
+        processedStats.forEach(s => {
+          ranking[s.deliveredBy] = (ranking[s.deliveredBy] || 0) + s.effortPoints;
         });
 
         // 2. Calculamos el % de Éxito General (SLA)
