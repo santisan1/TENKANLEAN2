@@ -168,86 +168,233 @@ const checkExistingOrder = async (cardId) => {
 };
 
 // ============ COMPONENTE: VISTA DE KPIs ============
+// ============ COMPONENTE: VISTA DE KPIs MEJORADA ============
 const KPIView = ({ currentUser }) => {
   const [kpiData, setKpiData] = useState({
-    avgLeadTime: 0,
-    topMaterials: [],
-    staffPerformance: [],
-    todayDelivered: 0
+    // Resumen general
+    overallLeadTime: 0,
+    deliveriesToday: 0,
+    pendingOrders: 0,
+    inTransitOrders: 0,
+
+    // Por operario
+    operatorPerformance: [],
+
+    // Por material
+    materialStats: [],
+
+    // Tendencias
+    hourlyDistribution: [],
+    avgTimeByStage: {
+      creationToDispatch: 0,
+      dispatchToDelivery: 0,
+      total: 0
+    },
+
+    // Ranking
+    topPerformers: [],
+    problemMaterials: []
   });
+
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState('today'); // 'today', 'week', 'month', 'all'
+  const [activeChart, setActiveChart] = useState('overview');
 
   useEffect(() => {
     const fetchKPIs = async () => {
       try {
-        // 1. Obtener pedidos entregados hoy
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        setLoading(true);
 
+        // Determinar rango de fechas
+        const now = new Date();
+        let startDate = new Date();
+
+        switch (timeRange) {
+          case 'today':
+            startDate.setHours(0, 0, 0, 0);
+            break;
+          case 'week':
+            startDate.setDate(now.getDate() - 7);
+            break;
+          case 'month':
+            startDate.setMonth(now.getMonth() - 1);
+            break;
+          case 'all':
+            startDate = new Date(0); // Desde el inicio
+            break;
+        }
+
+        // 1. Obtener TODOS los pedidos entregados en el rango
         const deliveredQuery = query(
           collection(db, 'active_orders'),
           where('status', '==', 'DELIVERED'),
-          where('deliveredAt', '>=', today)
+          where('deliveredAt', '>=', startDate)
         );
 
-        const snapshot = await getDocs(deliveredQuery);
-        const orders = snapshot.docs.map(doc => doc.data());
+        const allOrdersQuery = query(
+          collection(db, 'active_orders'),
+          where('status', 'in', ['PENDING', 'IN_TRANSIT', 'DELIVERED'])
+        );
 
-        // 2. Calcular Lead Time Promedio
-        const leadTimes = orders
-          .filter(o => o.timestamp && o.deliveredAt)
+        const [deliveredSnapshot, allSnapshot] = await Promise.all([
+          getDocs(deliveredQuery),
+          getDocs(allOrdersQuery)
+        ]);
+
+        const deliveredOrders = deliveredSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        const allOrders = allSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // 2. Calcular Lead Time General y por Etapa
+        const leadTimes = deliveredOrders
+          .filter(o => o.timestamp && o.dispatchedAt && o.deliveredAt)
           .map(o => {
             const created = o.timestamp.toMillis();
+            const dispatched = o.dispatchedAt.toMillis();
             const delivered = o.deliveredAt.toMillis();
-            return (delivered - created) / 60000; // minutos
+
+            return {
+              creationToDispatch: (dispatched - created) / 60000, // minutos
+              dispatchToDelivery: (delivered - dispatched) / 60000,
+              total: (delivered - created) / 60000
+            };
           });
 
         const avgLeadTime = leadTimes.length > 0
-          ? Math.round(leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length)
+          ? Math.round(leadTimes.reduce((sum, lt) => sum + lt.total, 0) / leadTimes.length)
           : 0;
 
-        // 3. Top 5 Materiales más pedidos
-        const materialCount = {};
-        orders.forEach(o => {
-          const key = o.partNumber;
-          materialCount[key] = (materialCount[key] || 0) + 1;
-        });
+        const avgCreationToDispatch = leadTimes.length > 0
+          ? Math.round(leadTimes.reduce((sum, lt) => sum + lt.creationToDispatch, 0) / leadTimes.length)
+          : 0;
 
-        const topMaterials = Object.entries(materialCount)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5)
-          .map(([part, count]) => ({ partNumber: part, count }));
+        const avgDispatchToDelivery = leadTimes.length > 0
+          ? Math.round(leadTimes.reduce((sum, lt) => sum + lt.dispatchToDelivery, 0) / leadTimes.length)
+          : 0;
 
-        // 4. Rendimiento por Staff
-        const staffCount = {};
-        orders.forEach(o => {
-          if (o.deliveredBy) {
-            staffCount[o.deliveredBy] = (staffCount[o.deliveredBy] || 0) + 1;
+        // 3. Rendimiento por Operario
+        const operatorStats = {};
+        deliveredOrders.forEach(order => {
+          if (order.deliveredBy) {
+            const op = order.deliveredBy;
+            if (!operatorStats[op]) {
+              operatorStats[op] = {
+                deliveries: 0,
+                totalLeadTime: 0,
+                leadTimes: []
+              };
+            }
+            operatorStats[op].deliveries++;
+
+            if (order.timestamp && order.deliveredAt) {
+              const leadTime = (order.deliveredAt.toMillis() - order.timestamp.toMillis()) / 60000;
+              operatorStats[op].totalLeadTime += leadTime;
+              operatorStats[op].leadTimes.push(leadTime);
+            }
           }
         });
 
-        const staffPerformance = Object.entries(staffCount)
-          .sort((a, b) => b[1] - a[1])
-          .map(([name, count]) => ({ name, deliveries: count }));
+        const operatorPerformance = Object.entries(operatorStats)
+          .map(([name, stats]) => ({
+            name,
+            deliveries: stats.deliveries,
+            avgLeadTime: stats.deliveries > 0
+              ? Math.round(stats.totalLeadTime / stats.deliveries)
+              : 0,
+            efficiency: stats.deliveries > 0
+              ? Math.round((1 / (stats.totalLeadTime / stats.deliveries)) * 1000) / 10 // Puntuación arbitraria
+              : 0
+          }))
+          .sort((a, b) => b.deliveries - a.deliveries);
+
+        // 4. Estadísticas por Material
+        const materialStats = {};
+        deliveredOrders.forEach(order => {
+          const material = order.partNumber;
+          if (!materialStats[material]) {
+            materialStats[material] = {
+              count: 0,
+              totalLeadTime: 0,
+              description: order.description || 'Sin descripción'
+            };
+          }
+          materialStats[material].count++;
+
+          if (order.timestamp && order.deliveredAt) {
+            const leadTime = (order.deliveredAt.toMillis() - order.timestamp.toMillis()) / 60000;
+            materialStats[material].totalLeadTime += leadTime;
+          }
+        });
+
+        const materialArray = Object.entries(materialStats)
+          .map(([partNumber, stats]) => ({
+            partNumber,
+            description: stats.description,
+            frequency: stats.count,
+            avgLeadTime: stats.count > 0
+              ? Math.round(stats.totalLeadTime / stats.count)
+              : 0
+          }))
+          .sort((a, b) => b.frequency - a.frequency)
+          .slice(0, 10); // Top 10 materiales
+
+        // 5. Distribución por hora
+        const hourlyDistribution = Array(24).fill(0);
+        deliveredOrders.forEach(order => {
+          if (order.deliveredAt) {
+            const hour = order.deliveredAt.toDate().getHours();
+            hourlyDistribution[hour]++;
+          }
+        });
+
+        // 6. Órdenes actuales
+        const pendingOrders = allOrders.filter(o => o.status === 'PENDING').length;
+        const inTransitOrders = allOrders.filter(o => o.status === 'IN_TRANSIT').length;
+
+        // 7. Top performers y materiales problemáticos
+        const topPerformers = [...operatorPerformance]
+          .sort((a, b) => b.efficiency - a.efficiency)
+          .slice(0, 5);
+
+        const problemMaterials = [...materialArray]
+          .filter(m => m.frequency >= 3) // Al menos 3 ocurrencias
+          .sort((a, b) => b.avgLeadTime - a.avgLeadTime)
+          .slice(0, 5);
 
         setKpiData({
-          avgLeadTime,
-          topMaterials,
-          staffPerformance,
-          todayDelivered: orders.length
+          overallLeadTime: avgLeadTime,
+          deliveriesToday: deliveredOrders.length,
+          pendingOrders,
+          inTransitOrders,
+          operatorPerformance,
+          materialStats: materialArray,
+          hourlyDistribution,
+          avgTimeByStage: {
+            creationToDispatch: avgCreationToDispatch,
+            dispatchToDelivery: avgDispatchToDelivery,
+            total: avgLeadTime
+          },
+          topPerformers,
+          problemMaterials
         });
-        setLoading(false);
 
       } catch (error) {
         console.error('Error fetching KPIs:', error);
+      } finally {
         setLoading(false);
       }
     };
 
     fetchKPIs();
-    const interval = setInterval(fetchKPIs, 30000);
+    const interval = setInterval(fetchKPIs, 60000); // Actualizar cada minuto
     return () => clearInterval(interval);
-  }, []);
+  }, [timeRange]);
 
   if (loading) {
     return (
@@ -258,101 +405,268 @@ const KPIView = ({ currentUser }) => {
   }
 
   return (
-    <div>
-      {/* Tarjetas de KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div className="space-y-6">
+      {/* Filtros de tiempo */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Dashboard de Estadísticas</h1>
+          <p className="text-gray-400">Métricas de rendimiento en tiempo real</p>
+        </div>
+
+        <div className="flex items-center gap-2 bg-gray-800/50 rounded-lg p-1">
+          {['today', 'week', 'month', 'all'].map((range) => (
+            <button
+              key={range}
+              onClick={() => setTimeRange(range)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${timeRange === range
+                ? 'bg-blue-500 text-white'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+            >
+              {range === 'today' ? 'Hoy' :
+                range === 'week' ? 'Semana' :
+                  range === 'month' ? 'Mes' : 'Todo'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tarjetas de Resumen */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <Clock className="w-8 h-8 text-blue-400" />
             <div>
               <p className="text-sm text-gray-400">Lead Time Promedio</p>
-              <p className="text-3xl font-bold text-white">{kpiData.avgLeadTime}<span className="text-lg text-gray-400">min</span></p>
+              <p className="text-3xl font-bold text-white">{kpiData.overallLeadTime}<span className="text-lg text-gray-400">min</span></p>
             </div>
           </div>
-          <div className="text-xs text-blue-300">Desde pedido hasta entrega</div>
+          <div className="text-xs text-blue-300">
+            {kpiData.avgTimeByStage.creationToDispatch}min prep + {kpiData.avgTimeByStage.dispatchToDelivery}min entrega
+          </div>
         </div>
 
         <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/20 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <CheckCircle className="w-8 h-8 text-green-400" />
             <div>
-              <p className="text-sm text-gray-400">Entregas Hoy</p>
-              <p className="text-3xl font-bold text-white">{kpiData.todayDelivered}</p>
+              <p className="text-sm text-gray-400">Entregas ({timeRange})</p>
+              <p className="text-3xl font-bold text-white">{kpiData.deliveriesToday}</p>
             </div>
           </div>
-          <div className="text-xs text-green-300">Pedidos completados</div>
+          <div className="text-xs text-green-300">Completadas en el período</div>
+        </div>
+
+        <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/10 border border-yellow-500/20 rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Truck className="w-8 h-8 text-yellow-400" />
+            <div>
+              <p className="text-sm text-gray-400">En Proceso</p>
+              <p className="text-3xl font-bold text-white">{kpiData.pendingOrders + kpiData.inTransitOrders}</p>
+            </div>
+          </div>
+          <div className="text-xs text-yellow-300">
+            {kpiData.pendingOrders} pendientes + {kpiData.inTransitOrders} en tránsito
+          </div>
         </div>
 
         <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 border border-purple-500/20 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
-            <Package className="w-8 h-8 text-purple-400" />
+            <User className="w-8 h-8 text-purple-400" />
             <div>
-              <p className="text-sm text-gray-400">Materiales Activos</p>
-              <p className="text-3xl font-bold text-white">{kpiData.topMaterials.length}</p>
+              <p className="text-sm text-gray-400">Operarios Activos</p>
+              <p className="text-3xl font-bold text-white">{kpiData.operatorPerformance.length}</p>
             </div>
           </div>
-          <div className="text-xs text-purple-300">Diferentes SKUs movidos</div>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/10 border border-orange-500/20 rounded-2xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <User className="w-8 h-8 text-orange-400" />
-            <div>
-              <p className="text-sm text-gray-400">Personal Activo</p>
-              <p className="text-3xl font-bold text-white">{kpiData.staffPerformance.length}</p>
-            </div>
-          </div>
-          <div className="text-xs text-orange-300">Repartidores trabajando</div>
+          <div className="text-xs text-purple-300">Realizando entregas</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 Materiales */}
-        <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            <Package className="w-6 h-6 text-blue-400" />
-            Top 5 Materiales Más Solicitados
-          </h2>
-          <div className="space-y-4">
-            {kpiData.topMaterials.map((mat, idx) => (
-              <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <span className="font-bold text-blue-400">#{idx + 1}</span>
+      {/* Sección principal con tabs */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Columna izquierda: Rendimiento por Operario */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <User className="w-6 h-6 text-green-400" />
+                Rendimiento por Operario
+              </h2>
+              <span className="text-sm text-gray-400">Top {kpiData.operatorPerformance.length}</span>
+            </div>
+
+            <div className="space-y-4">
+              {kpiData.operatorPerformance.map((op, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${idx === 0 ? 'bg-yellow-500/20' :
+                      idx === 1 ? 'bg-gray-500/20' :
+                        idx === 2 ? 'bg-orange-500/20' : 'bg-gray-800/50'
+                      }`}>
+                      <span className={`font-bold ${idx === 0 ? 'text-yellow-400' :
+                        idx === 1 ? 'text-gray-400' :
+                          idx === 2 ? 'text-orange-400' : 'text-gray-500'
+                        }`}>
+                        #{idx + 1}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-bold text-white capitalize">{op.name}</p>
+                      <p className="text-xs text-gray-400">{op.deliveries} entregas • {op.avgLeadTime} min promedio</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-mono font-bold text-white">{mat.partNumber}</p>
-                    <p className="text-xs text-gray-400">{mat.count} pedidos</p>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-green-400">{op.deliveries}</div>
+                    <div className="text-xs text-gray-400">entregas</div>
                   </div>
                 </div>
-                <div className="text-2xl font-bold text-blue-400">{mat.count}</div>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+
+          {/* Materiales más solicitados */}
+          <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Package className="w-6 h-6 text-blue-400" />
+              Materiales Más Solicitados
+            </h2>
+            <div className="space-y-4">
+              {kpiData.materialStats.map((mat, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                      <span className="font-bold text-blue-400">#{idx + 1}</span>
+                    </div>
+                    <div>
+                      <p className="font-mono font-bold text-white">{mat.partNumber}</p>
+                      <p className="text-xs text-gray-400">{mat.description}</p>
+                      <p className="text-xs text-gray-500">{mat.avgLeadTime} min promedio</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-blue-400">{mat.frequency}</div>
+                    <div className="text-xs text-gray-400">solicitudes</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Rendimiento del Personal */}
-        <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            <User className="w-6 h-6 text-green-400" />
-            Rendimiento Logístico
-          </h2>
-          <div className="space-y-4">
-            {kpiData.staffPerformance.map((staff, idx) => (
-              <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-green-400" />
+        {/* Columna derecha: Métricas detalladas */}
+        <div className="space-y-6">
+          {/* Tiempos por etapa */}
+          <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Clock className="w-6 h-6 text-purple-400" />
+              Tiempos por Etapa
+            </h2>
+            <div className="space-y-4">
+              <div className="bg-gray-800/50 rounded-xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-300">Preparación</span>
+                  <span className="font-bold text-purple-400">{kpiData.avgTimeByStage.creationToDispatch} min</span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div
+                    className="bg-purple-500 h-2 rounded-full"
+                    style={{ width: `${Math.min((kpiData.avgTimeByStage.creationToDispatch / kpiData.avgTimeByStage.total) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-gray-800/50 rounded-xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-300">Entrega</span>
+                  <span className="font-bold text-blue-400">{kpiData.avgTimeByStage.dispatchToDelivery} min</span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full"
+                    style={{ width: `${Math.min((kpiData.avgTimeByStage.dispatchToDelivery / kpiData.avgTimeByStage.total) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="bg-gray-800/50 rounded-xl p-4 border border-green-500/20">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300 font-bold">Total</span>
+                  <span className="font-bold text-green-400 text-xl">{kpiData.avgTimeByStage.total} min</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Performers */}
+          <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Activity className="w-6 h-6 text-yellow-400" />
+              Top Eficiencia
+            </h2>
+            <div className="space-y-4">
+              {kpiData.topPerformers.map((op, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-full flex items-center justify-center">
+                      <span className="font-bold text-yellow-400">#{idx + 1}</span>
+                    </div>
+                    <div>
+                      <p className="font-bold text-white capitalize">{op.name}</p>
+                      <p className="text-xs text-gray-400">{op.avgLeadTime} min promedio</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-white capitalize">{staff.name}</p>
-                    <p className="text-xs text-gray-400">{staff.deliveries} entregas completadas</p>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-yellow-400">{op.efficiency}%</div>
+                    <div className="text-xs text-gray-400">eficiencia</div>
                   </div>
                 </div>
-                <div className="text-2xl font-bold text-green-400">{staff.deliveries}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+
+          {/* Materiales Problemáticos */}
+          {kpiData.problemMaterials.length > 0 && (
+            <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-red-800/50 p-6">
+              <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <AlertTriangle className="w-6 h-6 text-red-400" />
+                Materiales con Mayor Lead Time
+              </h2>
+              <div className="space-y-4">
+                {kpiData.problemMaterials.map((mat, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4 border border-red-500/20">
+                    <div>
+                      <p className="font-mono font-bold text-white text-sm">{mat.partNumber}</p>
+                      <p className="text-xs text-gray-400 truncate max-w-[120px]">{mat.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-red-400">{mat.avgLeadTime} min</div>
+                      <div className="text-xs text-gray-400">promedio</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Gráfico simple de distribución horaria */}
+      <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+          <Clock className="w-6 h-6 text-blue-400" />
+          Distribución de Entregas por Hora
+        </h2>
+        <div className="flex items-end justify-between h-48 pt-6 border-t border-gray-800">
+          {kpiData.hourlyDistribution.map((count, hour) => (
+            <div key={hour} className="flex flex-col items-center flex-1 mx-1">
+              <div
+                className="w-full bg-gradient-to-t from-blue-500 to-blue-600 rounded-t-lg transition-all hover:opacity-80"
+                style={{ height: `${(count / Math.max(...kpiData.hourlyDistribution)) * 80 || 0}%` }}
+                title={`${count} entregas a las ${hour}:00`}
+              ></div>
+              <span className="text-xs text-gray-500 mt-2">{hour}:00</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
