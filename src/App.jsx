@@ -295,7 +295,37 @@ const KPIView = ({ currentUser }) => {
 
         // KPI: Porcentaje de éxito sobre SLA
         const slaSuccess = Math.round((processedStats.filter(s => s.onTime).length / processedStats.length) * 100) || 0;
+        // --- CÁLCULOS PROFESIONALES POST-PROCESAMIENTO ---
 
+        // 1. Porcentaje de Éxito (SLA %)
+        const totalDelivered = processedStats.length;
+        const onTimeCount = processedStats.filter(s => s.onTime).length;
+        const slaPercent = totalDelivered > 0 ? Math.round((onTimeCount / totalDelivered) * 100) : 0;
+
+        // 2. Power Ranking por Esfuerzo (Justicia Operativa)
+        const rankingMap = {};
+        processedStats.forEach(s => {
+          const op = s.deliveredBy || 'S/A';
+          rankingMap[op] = (rankingMap[op] || 0) + s.effortPoints;
+        });
+
+        const operatorPerformance = Object.entries(rankingMap)
+          .map(([name, points]) => ({
+            name,
+            points: Math.round(points),
+            // Buscamos cuántas entregas reales hizo este operario para el detalle
+            deliveries: processedStats.filter(s => s.deliveredBy === name).length
+          }))
+          .sort((a, b) => b.points - a.points); // Ordenamos por PUNTOS, no por cantidad
+
+        // 3. Actualizamos el estado final
+        setKpiData(prev => ({
+          ...prev,
+          operatorPerformance, // Ahora basado en Puntos de Esfuerzo
+          overallLeadTime: avgLeadTime,
+          deliveriesToday: totalDelivered,
+          slaSuccessRate: slaPercent // Nuevo campo para tu UI
+        }));
         // KPI: Power Ranking por Esfuerzo (No por cantidad)
         const ranking = {};
         processedStats.forEach(s => {
@@ -335,20 +365,7 @@ const KPIView = ({ currentUser }) => {
           }
         });
 
-        const operatorPerformance = Object.entries(operatorStats)
-          .map(([name, stats]) => ({
-            name,
-            deliveries: stats.deliveries,
-            avgLeadTime: stats.deliveries > 0
-              ? Math.round(stats.totalLeadTime / stats.deliveries)
-              : 0,
-            efficiency: stats.deliveries > 0
-              ? Math.round((1 / (stats.totalLeadTime / stats.deliveries)) * 1000) / 10 // Puntuación arbitraria
-              : 0
-          }))
-          .sort((a, b) => b.deliveries - a.deliveries);
 
-        // 4. Estadísticas por Material
         const materialStats = {};
         deliveredOrders.forEach(order => {
           const material = order.partNumber;
@@ -1114,26 +1131,28 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
         });
       } else if (newStatus === 'DELIVERED') {
         const orderSnap = await getDoc(orderRef);
+        if (!orderSnap.exists()) return;
         const data = orderSnap.data();
 
-        // Calculamos éxito antes de moverlo
-        const leadTimeTotal = (Date.now() - data.timestamp.toMillis()) / 60000;
-        const isSuccess = leadTimeTotal <= (data.targetLeadTime || 30);
+        // Convertimos los strings de Firebase a números para el cálculo
+        const target = parseInt(data.targetLeadTime) || 30;
+        const startTime = data.timestamp?.toMillis() || Date.now();
+        const leadTimeTotal = (Date.now() - startTime) / 60000;
 
-        // 1. Lo mandamos a la colección de completados
+        // 1. CREAR: Esto genera la colección 'completed_orders' automáticamente
         await addDoc(collection(db, 'completed_orders'), {
           ...data,
           status: 'DELIVERED',
           deliveredAt: serverTimestamp(),
           deliveredBy: currentUser.email.split('@')[0],
-          finalLeadTime: leadTimeTotal,
-          isSuccess: isSuccess
+          finalLeadTime: Math.round(leadTimeTotal),
+          isSuccess: leadTimeTotal <= target // SLA check
         });
 
-        // 2. Lo borramos de activos (Asegurate de importar deleteDoc arriba)
+        // 2. BORRAR de activos (importante para la limpieza del Dashboard)
         await deleteDoc(orderRef);
       }
-    } catch (error) { console.error('Error:', error); }
+    } catch (error) { console.error('Error al cerrar pedido:', error); }
   };
 
   const locationStatuses = orders.reduce((acc, order) => {
