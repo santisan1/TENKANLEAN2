@@ -1689,13 +1689,15 @@ export default function App() {
     );
   }
 
-  const isMobile = window.innerWidth < 768;
+  // Dispositivos móviles y tablets (ancho menor a 1024px) usarán OperatorView
+  const isMobileOrTablet = window.innerWidth < 1024;
 
-  // Si es celular: OperatorView con o sin login
-  if (isMobile) {
+  if (isMobileOrTablet) {
+    // Si el usuario toca el botón de login y no está logueado, mostramos el login
     if (showLogin && !currentUser) {
       return <LoginScreen onLoginSuccess={() => setShowLogin(false)} />;
     }
+    // Siempre mostrar OperatorView, con o sin usuario
     return <OperatorView
       currentUser={currentUser}
       onLogout={handleLogout}
@@ -1703,7 +1705,7 @@ export default function App() {
     />;
   }
 
-  // Si es PC: Login obligatorio
+  // Para escritorio (pantallas grandes) login obligatorio
   if (!currentUser) {
     return <LoginScreen onLoginSuccess={() => setShowLogin(false)} />;
   }
