@@ -226,14 +226,14 @@ const KPIView = ({ currentUser }) => {
 
         // 1. Obtener TODOS los pedidos entregados en el rango
         const deliveredQuery = query(
-          collection(db, 'active_orders'),
+          collection(db, 'completed_orders'),
           where('status', '==', 'DELIVERED'),
           where('deliveredAt', '>=', startDate)
         );
 
         const allOrdersQuery = query(
           collection(db, 'active_orders'),
-          where('status', 'in', ['PENDING', 'IN_TRANSIT', 'DELIVERED'])
+          where('status', 'in', ['PENDING', 'IN_TRANSIT'])
         );
 
         const [deliveredSnapshot, allSnapshot] = await Promise.all([
@@ -241,10 +241,7 @@ const KPIView = ({ currentUser }) => {
           getDocs(allOrdersQuery)
         ]);
 
-        const deliveredOrders = deliveredSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const deliveredOrders = deliveredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         const allOrders = allSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -280,19 +277,37 @@ const KPIView = ({ currentUser }) => {
         // Dentro de tu fetchKPIs, después de obtener los pedidos:
 
         const processedStats = deliveredOrders.map(order => {
-          const complexity = parseInt(order.complexityWeight) || 1;
-          const target = parseInt(order.targetLeadTime) || 30;
-          const actualTime = order.finalLeadTime || 0;
+          const complexity = order.complexityWeight || 1;
+          const target = order.targetLeadTime || 30;
+          const actualTime = order.finalLeadTimeMinutes || 0; // Usamos el campo que creamos al mover
 
           return {
             ...order,
             onTime: actualTime <= target,
-            // Justica Operativa: El que entrega algo de 100kg (Complejidad 5) suma más puntos
-            // Si lo entrega a tiempo, sumamos bonus del 50% de puntos
+            // Justica Operativa: Puntos = Complejidad x Bonus por cumplimiento (50% extra)
             effortPoints: complexity * (actualTime <= target ? 1.5 : 1)
           };
         });
 
+        // 3. Power Ranking: Agrupar puntos por operario
+        const operatorEffortMap = {};
+        processedStats.forEach(order => {
+          const op = order.deliveredBy || 'Anónimo';
+          if (!operatorEffortMap[op]) {
+            operatorEffortMap[op] = { deliveries: 0, totalPoints: 0 };
+          }
+          operatorEffortMap[op].deliveries++;
+          operatorEffortMap[op].totalPoints += order.effortPoints;
+        });
+
+        operatorPerformance = Object.entries(operatorEffortMap)
+          .map(([name, stats]) => ({
+            name,
+            deliveries: stats.deliveries,
+            points: Math.round(stats.totalPoints), // Esto es lo que vamos a mostrar ahora
+            efficiency: Math.round((stats.totalPoints / (stats.deliveries * 5)) * 100) // % sobre ideal
+          }))
+          .sort((a, b) => b.points - a.points); // Gomez vuelve arriba por sus puntos!
         // KPI: Porcentaje de éxito sobre SLA
         const slaSuccess = Math.round((processedStats.filter(s => s.onTime).length / processedStats.length) * 100) || 0;
         // --- CÁLCULOS PROFESIONALES POST-PROCESAMIENTO ---
