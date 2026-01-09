@@ -300,7 +300,7 @@ const KPIView = ({ currentUser }) => {
           operatorEffortMap[op].totalPoints += order.effortPoints;
         });
 
-        operatorPerformance = Object.entries(operatorEffortMap)
+        const operatorPerformance = Object.entries(operatorEffortMap)
           .map(([name, stats]) => ({
             name,
             deliveries: stats.deliveries,
@@ -324,14 +324,6 @@ const KPIView = ({ currentUser }) => {
           rankingMap[op] = (rankingMap[op] || 0) + s.effortPoints;
         });
 
-        const operatorPerformance = Object.entries(rankingMap)
-          .map(([name, points]) => ({
-            name,
-            points: Math.round(points),
-            // Buscamos cuántas entregas reales hizo este operario para el detalle
-            deliveries: processedStats.filter(s => s.deliveredBy === name).length
-          }))
-          .sort((a, b) => b.points - a.points); // Ordenamos por PUNTOS, no por cantidad
 
         // 3. Actualizamos el estado final
         setKpiData(prev => ({
