@@ -290,26 +290,45 @@ const KPIView = ({ currentUser }) => {
         });
 
         // 3. Power Ranking: Agrupar puntos por operario
-        const operatorEffortMap = {};
+        const operatorStatsMap = {};
+
         processedStats.forEach(order => {
           const op = order.deliveredBy || 'Anónimo';
-          if (!operatorEffortMap[op]) {
-            operatorEffortMap[op] = { deliveries: 0, totalPoints: 0 };
+          if (!operatorStatsMap[op]) {
+            operatorStatsMap[op] = {
+              deliveries: 0,
+              totalLoad: 0,
+              efficiencySum: 0,
+              avgReaction: 0,
+              suspiciousCount: 0
+            };
           }
-          operatorEffortMap[op].deliveries++;
-          operatorEffortMap[op].totalPoints += order.effortPoints;
+
+          operatorStatsMap[op].deliveries++;
+          // SUMA DE CARGA ACUMULADA: Niveles 4 y 5 suman mucho más
+          operatorStatsMap[op].totalLoad += order.loadPoints || 0;
+
+          // DESEMPEÑO DE TIEMPOS
+          operatorStatsMap[op].efficiencySum += order.taskEfficiency || 0;
+          operatorStatsMap[op].avgReaction += order.reactionTime || 0;
+
+          if (order.isSuspicious) operatorStatsMap[op].suspiciousCount++;
         });
 
-        const operatorPerformance = Object.entries(operatorEffortMap)
+        const operatorPerformance = Object.entries(operatorStatsMap)
           .map(([name, stats]) => ({
             name,
             deliveries: stats.deliveries,
-            points: Math.round(stats.totalPoints), // Esto es lo que vamos a mostrar ahora
-            // REEMPLAZO QUIRÚRGICO EN KPIView (para que 100% sea cumplir el tiempo)
-            efficiency: Math.round((stats.onTimeCount / stats.deliveries) * 100)// REEMPLAZO QUIRÚRGICO EN KPIView (para que 100% sea cumplir el tiempo)
-
+            // PUNTOS DE CARGA: Esta es la métrica de volumen de trabajo real
+            totalPoints: stats.totalLoad,
+            // EFICIENCIA: Qué tan bien cumple sus estándares
+            avgEfficiency: Math.round(stats.efficiencySum / stats.deliveries),
+            // REACCIÓN: Cuánto tarda en aceptar un pedido (bajo es mejor)
+            reactionRank: Math.round(stats.avgReaction / stats.deliveries),
+            // INTEGRIDAD: Porcentaje de pedidos realizados bajo el proceso correcto
+            integrityScore: Math.round(((stats.deliveries - stats.suspiciousCount) / stats.deliveries) * 100)
           }))
-          .sort((a, b) => b.points - a.points); // Gomez vuelve arriba por sus puntos!
+          .sort((a, b) => b.totalPoints - a.totalPoints); // Ranking por Carga Acumulada  
         // KPI: Porcentaje de éxito sobre SLA
         const slaSuccess = Math.round((processedStats.filter(s => s.onTime).length / processedStats.length) * 100) || 0;
         // --- CÁLCULOS PROFESIONALES POST-PROCESAMIENTO ---
@@ -684,7 +703,25 @@ const KPIView = ({ currentUser }) => {
               ))}
             </div>
           </div>
+          {/* Ejemplo de cómo mostrar los dos indicadores en tu tabla */}
+          <div className="flex flex-col gap-2 w-full">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-blue-400">Eficiencia (Velocidad): {op.avgEfficiency}%</span>
+              <span className="text-orange-400">Carga Acumulada: {op.totalPoints} pts</span>
+            </div>
 
+            {/* Barra de Reacción (para ver si prepara antes de aceptar) */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-500">T. Reacción:</span>
+              <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${op.reactionRank > 10 ? 'bg-red-500' : 'bg-green-500'}`}
+                  style={{ width: `${Math.min(op.reactionRank * 5, 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-mono">{op.reactionRank}m</span>
+            </div>
+          </div>
           {/* Materiales Problemáticos */}
           {kpiData.problemMaterials.length > 0 && (
             <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-red-800/50 p-6">
@@ -1149,31 +1186,40 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
           dispatchedAt: serverTimestamp(),
           takenBy: currentUser.email.split('@')[0]
         });
+
       } else if (newStatus === 'DELIVERED') {
-        // BUSCÁ EL "else if (newStatus === 'DELIVERED')" Y REEMPLAZALO POR ESTE:
-      } else if (newStatus === 'DELIVERED') {
-        const orderRef = doc(db, 'active_orders', orderId);
         const orderSnap = await getDoc(orderRef);
+        if (!orderSnap.exists()) return;
+        const data = orderSnap.data();
 
-        if (orderSnap.exists()) {
-          const data = orderSnap.data();
-          const userName = currentUser.email.split('@')[0];
+        const now = Date.now();
+        const t_creacion = data.timestamp.toMillis();
+        const t_aceptado = data.dispatchedAt.toMillis();
 
-          // 1. CREAMOS el documento en la carpeta nueva (completed_orders)
-          await addDoc(collection(db, 'completed_orders'), {
-            ...data,
-            status: 'DELIVERED',
-            deliveredAt: serverTimestamp(),
-            deliveredBy: userName,
-            // Convertimos los strings a números para que los KPIs no rompan
-            complexityWeight: parseInt(data.complexityWeight || 1),
-            targetLeadTime: parseInt(data.targetLeadTime || 30),
-            finalLeadTimeMinutes: Math.round((Date.now() - data.timestamp.toMillis()) / 60000)
-          });
+        // 1. TIEMPOS SEGMENTADOS (en minutos)
+        const reactionTime = (t_aceptado - t_creacion) / 60000; // Tiempo en tablero
+        const executionTime = (now - t_aceptado) / 60000;      // Tiempo real de la tarea
+        const totalLeadTime = (now - t_creacion) / 60000;      // Lead Time General
 
-          // 2. BORRAMOS el original de active_orders (Asegurate de importar deleteDoc arriba)
-          await deleteDoc(orderRef);
-        }
+        // 2. CÁLCULO DE EFICIENCIA Y CARGA
+        const stdTime = parseInt(data.stdOpTime || 5);
+        const taskEfficiency = Math.round((stdTime / executionTime) * 100);
+        const complexity = parseInt(data.complexityWeight || 1);
+
+        await addDoc(collection(db, 'completed_orders'), {
+          ...data,
+          status: 'DELIVERED',
+          deliveredAt: serverTimestamp(),
+          reactionTime: Math.round(reactionTime),
+          executionTime: Math.round(executionTime),
+          totalLeadTime: Math.round(totalLeadTime),
+          taskEfficiency: taskEfficiency,
+          loadPoints: complexity, // Puntos por nivel de dificultad
+          // Marcamos como sospechoso si aceptó y entregó en < 20% del tiempo estándar
+          isSuspicious: executionTime < (stdTime * 0.2)
+        });
+
+        await deleteDoc(orderRef);
       }
     } catch (error) { console.error('Error al cerrar pedido:', error); }
   };
