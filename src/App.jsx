@@ -305,7 +305,9 @@ const KPIView = ({ currentUser }) => {
             name,
             deliveries: stats.deliveries,
             points: Math.round(stats.totalPoints), // Esto es lo que vamos a mostrar ahora
-            efficiency: Math.round((stats.totalPoints / (stats.deliveries * 5)) * 100) // % sobre ideal
+            // REEMPLAZO QUIRÚRGICO EN KPIView (para que 100% sea cumplir el tiempo)
+            efficiency: Math.round((stats.onTimeCount / stats.deliveries) * 100)// REEMPLAZO QUIRÚRGICO EN KPIView (para que 100% sea cumplir el tiempo)
+
           }))
           .sort((a, b) => b.points - a.points); // Gomez vuelve arriba por sus puntos!
         // KPI: Porcentaje de éxito sobre SLA
