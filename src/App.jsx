@@ -878,8 +878,3 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon, color }) => {
 };
 
 // Main App
-export default function App() {
-  const [isMobile] = useState(window.innerWidth < 768);
-
-  return isMobile ? <OperatorView /> : <SupplyChainView />;
-}
