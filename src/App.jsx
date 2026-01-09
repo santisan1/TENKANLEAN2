@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDoc, getDocs, addDoc, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
-import { Package, AlertTriangle, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Wifi, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { Package, AlertTriangle, CheckCircle, Truck, Info, Camera, Clock, MapPin, Activity, Wifi, Factory, LogOut, User, BarChart3, TrendingUp, Award, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBMHgf9gtc9NZbJXxODxVWfB17Y81geUfo",
   authDomain: "tte-tenkan-lean.firebaseapp.com",
@@ -17,6 +17,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence);
 
 // Utility: Check if order is urgent (>15 min pending)
 const isUrgent = (timestamp, status) => {
@@ -31,6 +33,11 @@ const formatTime = (timestamp) => {
   if (!timestamp) return '--:--';
   return timestamp.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
+const calculateLeadTime = (order) => {
+  if (!order.deliveredAt || !order.timestamp) return null;
+  return Math.floor((order.deliveredAt.toMillis() - order.timestamp.toMillis()) / 60000);
+};
+
 // Function to check for existing active orders
 const checkExistingOrder = async (cardId) => {
   try {
@@ -68,8 +75,62 @@ const checkExistingOrder = async (cardId) => {
     return { exists: false, error: error.message };
   }
 };
+const LoginScreen = ({ onLoginSuccess }) => {
+  const [apellido, setApellido] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const email = `${apellido.toLowerCase().trim()}@tte.com`;
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      onLoginSuccess(userCredential.user);
+    } catch (err) {
+      setError('Apellido o contraseña incorrectos');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-6">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-md w-full">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-500/20 rounded-2xl mb-4">
+            <Factory className="w-10 h-10 text-blue-400" />
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">TTE E-Kanban</h1>
+          <p className="text-gray-400">Acceso para Personal de Almacén</p>
+        </div>
+        <form onSubmit={handleLogin} className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border border-gray-700">
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">Apellido</label>
+            <input type="text" value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Ej: gomez" className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-lg" autoFocus />
+            <p className="text-xs text-gray-500 mt-1">Se completará como: {apellido}@tte.com</p>
+          </div>
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">Contraseña</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••" className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-lg" />
+          </div>
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <p className="text-red-300 text-sm">{error}</p>
+            </div>
+          )}
+          <button type="submit" disabled={loading || !apellido || !password} className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-600 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+            {loading ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Verificando...</>) : (<><User className="w-5 h-5" />Iniciar Sesión</>)}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
 // Component: Operator View (Mobile)
-const OperatorView = () => {
+const OperatorView = ({ currentUser }) => {
   const [cardId, setCardId] = useState('');
   const [scanning, setScanning] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -100,343 +161,172 @@ const OperatorView = () => {
     }
   }, [autoSubmitted]);
 
-  const simulateScan = () => {
-    const mockId = `MAT-${Math.floor(Math.random() * 100).toString().padStart(3, '0')}`;
-    setCardId(mockId);
-    handleScan(mockId);
-  };
 
   const handleScan = async (scannedId) => {
-    const now = Date.now();
-    // Evita escaneos accidentales múltiples seguidos (rebote)
-    if (now - lastScanTime < 5000) {
-      setFeedback({ type: 'error', message: 'Aguarde un momento entre escaneos' });
-      return;
-    }
-    setLastScanTime(now);
     if (!scannedId) return;
-
     setScanning(true);
     setFeedback(null);
     setExistingOrderInfo(null);
 
     try {
-      // 1. Verificamos si la tarjeta existe en el Maestro de Materiales
       const cardRef = doc(db, 'kanban_cards', scannedId);
       const cardSnap = await getDoc(cardRef);
 
       if (!cardSnap.exists()) {
-        setFeedback({ type: 'error', message: 'Tarjeta NO REGISTRADA en el sistema.' });
+        setFeedback({ type: 'error', message: 'Tarjeta NO REGISTRADA' });
         setScanning(false);
         return;
       }
 
       const card = cardSnap.data();
-
-      // 2. BUSQUEDA DE DUPLICADOS: Verificamos si ya hay un pedido activo
       const existingOrder = await checkExistingOrder(scannedId);
 
-      if (existingOrder.exists) {
-        // Calculamos cuánto tiempo lleva esperando el pedido original
-        const pedidoOriginalTime = existingOrder.timestamp.toMillis();
-        const minutosEspera = Math.floor((Date.now() - pedidoOriginalTime) / 60000);
-
-        setExistingOrderInfo({
-          orderId: existingOrder.orderId,
-          status: existingOrder.status,
-          timestamp: existingOrder.timestamp,
-          location: existingOrder.location,
-          partNumber: existingOrder.partNumber
-        });
-
-        const mensajeEstado = existingOrder.status === 'PENDING'
-          ? 'ya fue solicitado y está PENDIENTE'
-          : 'ya está EN CAMINO';
-
-        setFeedback({
-          type: 'info',
-          message: `¡AVISO!\nEste material ${mensajeEstado}.\nEsperando hace ${minutosEspera} min.\nEvitemos sobre-stock.`
-        });
-
-        setScanning(false);
-        return; // CORTA LA EJECUCIÓN: No crea el pedido nuevo
+      if (!currentUser) {
+        if (existingOrder.exists) {
+          const mins = Math.floor((Date.now() - existingOrder.timestamp.toMillis()) / 60000);
+          setExistingOrderInfo(existingOrder);
+          setFeedback({ type: 'info', message: `Material solicitado hace ${mins} min\nEstado: ${existingOrder.status === 'PENDING' ? 'Pendiente' : 'En camino'}` });
+        } else {
+          await addDoc(collection(db, 'active_orders'), {
+            cardId: scannedId, partNumber: card.partNumber, description: card.description,
+            location: card.location, standardPack: card.standardPack, timestamp: serverTimestamp(),
+            status: 'PENDING', operatorId: 'Producción', createdAt: serverTimestamp()
+          });
+          setFeedback({ type: 'success', message: `✓ Pedido confirmado\n${card.partNumber}` });
+        }
+      } else {
+        if (existingOrder.exists && existingOrder.status === 'IN_TRANSIT') {
+          setExistingOrderInfo({ ...existingOrder, card, canDeliver: true });
+          setFeedback({ type: 'delivery', message: 'Material listo para entregar' });
+        } else if (existingOrder.exists) {
+          setExistingOrderInfo(existingOrder);
+          setFeedback({ type: 'info', message: 'Pedido en proceso' });
+        } else {
+          await addDoc(collection(db, 'active_orders'), {
+            cardId: scannedId, partNumber: card.partNumber, description: card.description,
+            location: card.location, standardPack: card.standardPack, timestamp: serverTimestamp(),
+            status: 'PENDING', operatorId: currentUser.email.split('@')[0], createdAt: serverTimestamp()
+          });
+          setFeedback({ type: 'success', message: `✓ Pedido creado` });
+        }
       }
-
-      // 3. SI NO HAY DUPLICADO: Crea el nuevo pedido
-      await addDoc(collection(db, 'active_orders'), {
-        cardId: scannedId,
-        partNumber: card.partNumber,
-        description: card.description,
-        location: card.location,
-        standardPack: card.standardPack,
-        timestamp: serverTimestamp(),
-        status: 'PENDING',
-        createdAt: serverTimestamp()
-      });
-
-      setFeedback({
-        type: 'success',
-        message: `✓ Pedido confirmado para ${card.location}\n${card.partNumber} solicitado.`
-      });
-
     } catch (error) {
-      console.error('Error:', error);
-      setFeedback({ type: 'error', message: 'Error de conexión. Intente nuevamente.' });
+      setFeedback({ type: 'error', message: 'Error de conexión' });
     }
-
     setScanning(false);
+  };
+  const handleDeliveryConfirm = async () => {
+    if (!existingOrderInfo?.orderId) return;
+    try {
+      await updateDoc(doc(db, 'active_orders', existingOrderInfo.orderId), {
+        status: 'DELIVERED', deliveredAt: serverTimestamp(),
+        deliveredBy: currentUser.email.split('@')[0]
+      });
+      setFeedback({ type: 'success', message: '✓ ENTREGA CONFIRMADA' });
+      setExistingOrderInfo(null);
+      setCardId('');
+    } catch (error) {
+      setFeedback({ type: 'error', message: 'Error al confirmar' });
+    }
   };
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950">
-      {/* Industrial Header */}
       <div className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm">
-        <div className="max-w-md mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Factory className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">TTE E-KANBAN</h1>
-                <p className="text-xs text-gray-400">Bobinado • Punto de Consumo</p>
-              </div>
+        <div className="max-w-md mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+              <Factory className="w-6 h-6 text-white" />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-400 font-medium">ONLINE</span>
+            <div>
+              <h1 className="text-xl font-bold text-white">TTE E-KANBAN</h1>
+              <p className="text-xs text-gray-400">{currentUser ? `${currentUser.email.split('@')[0]}` : 'Producción'}</p>
             </div>
           </div>
+          {currentUser && (<button onClick={() => signOut(auth)} className="p-2 hover:bg-gray-800 rounded-lg"><LogOut className="w-5 h-5 text-gray-400" /></button>)}
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-md mx-auto px-6 py-8">
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="text-center mb-10"
-        >
-          <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-blue-500/10 to-blue-600/10 rounded-2xl mb-6 border border-blue-500/20">
-            <Package className="w-12 h-12 text-blue-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Escaneo de Material</h2>
-          <p className="text-gray-400 text-sm">Escanee el código QR de la tarjeta Kanban para solicitar material</p>
-        </motion.div>
-        {/* Existing Order Info */}
-        <AnimatePresence>
-          {existingOrderInfo && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mt-4"
-            >
-              <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-500/50 rounded-2xl p-6 shadow-2xl">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-14 h-14 bg-yellow-500/30 rounded-full flex items-center justify-center animate-pulse">
-                    <Info className="w-8 h-8 text-yellow-300" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-yellow-200 text-xl">Pedido ya en proceso</p>
-                    <p className="text-yellow-300/80 text-sm">No es necesario volver a escanear</p>
-                  </div>
-                </div>
-
-                <div className="bg-gray-900/50 rounded-xl p-4 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300">Estado:</span>
-                    <span className={`px-3 py-1 rounded-full font-bold ${existingOrderInfo.status === 'PENDING'
-                      ? 'bg-yellow-500/20 text-yellow-300'
-                      : 'bg-orange-500/20 text-orange-300'
-                      }`}>
-                      {existingOrderInfo.status === 'PENDING' ? '⏳ Pendiente' : '🚚 En camino'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-300">Solicitado:</span>
-                    <span className="font-mono font-bold text-white">
-                      {formatTime(existingOrderInfo.timestamp)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-300">Material:</span>
-                    <span className="font-medium text-white">{existingOrderInfo.partNumber}</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-center gap-2 text-sm text-yellow-300/80">
-                  <Clock className="w-4 h-4" />
-                  <span>El almacén está procesando tu solicitud</span>
-                </div>
-                <button
-                  onClick={async () => {
-                    try {
-                      await updateDoc(doc(db, 'active_orders', existingOrderInfo.orderId), {
-                        status: 'CANCELLED',
-                        cancelledAt: serverTimestamp()
-                      });
-
-                      setFeedback({
-                        type: 'success',
-                        message: 'Pedido cancelado correctamente'
-                      });
-
-                      setExistingOrderInfo(null);
-                      setCardId('');
-                    } catch (error) {
-                      console.error('Error cancelling order:', error);
-                      setFeedback({
-                        type: 'error',
-                        message: 'No se pudo cancelar el pedido'
-                      });
-                    }
-                  }}
-                  className="w-full mt-4 bg-red-500/20 hover:bg-red-500/30 text-red-300 py-3 rounded-lg font-medium transition-colors border border-red-500/30 flex items-center justify-center gap-2"
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>Cancelar este pedido</span>
-                </button>
+        {existingOrderInfo?.canDeliver && (
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="mb-6 bg-gradient-to-r from-green-500/20 to-green-600/20 border-2 border-green-500 rounded-2xl p-6">
+            <div className="text-center mb-4">
+              <div className="w-16 h-16 bg-green-500/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="w-8 h-8 text-green-300" />
               </div>
-            </motion.div>
-          )}
+              <h3 className="text-xl font-bold text-green-200 mb-2">Confirmar Recepción</h3>
+              <p className="text-green-300">{existingOrderInfo.card.partNumber}</p>
+            </div>
+            <button onClick={handleDeliveryConfirm} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-5 rounded-xl flex items-center justify-center gap-3 text-lg">
+              <CheckCircle className="w-6 h-6" />CONFIRMAR ENTREGA
+            </button>
+          </motion.div>
+        )}
 
-        </AnimatePresence>
-        <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-6 shadow-2xl"
-        >
+        <div className="bg-gray-800/30 rounded-2xl border border-gray-700/50 p-6">
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-medium text-gray-300">ID de Tarjeta</label>
-              <span className="text-xs text-gray-500 font-mono">MAT-XXX</span>
+            <label className="block text-sm font-medium text-gray-300 mb-2">ID de Tarjeta</label>
+            <input type="text" value={cardId} onChange={(e) => setCardId(e.target.value.toUpperCase())} placeholder="MAT-001" className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white font-mono text-lg" />
+          </div>
+          <button onClick={() => handleScan(cardId)} disabled={!cardId || scanning} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 disabled:from-gray-700 text-white font-bold py-5 rounded-xl flex items-center justify-center gap-3 text-lg mb-3">
+            {scanning ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Procesando...</>) : (<><CheckCircle className="w-5 h-5" />CONFIRMAR</>)}
+          </button>
+
+          {feedback && (
+            <div className={`mt-4 p-4 rounded-xl border ${feedback.type === 'success' ? 'bg-green-500/10 border-green-500/30' : feedback.type === 'error' ? 'bg-red-500/10 border-red-500/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
+              <p className="font-bold text-white">{feedback.message}</p>
             </div>
-            <div className="relative">
-              <input
-                type="text"
-                value={cardId}
-                onChange={(e) => setCardId(e.target.value.toUpperCase())}
-                placeholder="Ingrese o escanee código"
-                className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-all duration-300 font-mono text-lg tracking-wider"
-                disabled={scanning}
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <div className="w-6 h-6 border-2 border-gray-600 rounded"></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={() => handleScan(cardId)}
-              disabled={!cardId || scanning}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-gray-700 disabled:to-gray-800 text-white font-bold py-4 px-6 rounded-xl transition-all duration-300 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 flex items-center justify-center gap-3"
-            >
-              {scanning ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Procesando Escaneo...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-5 h-5" />
-                  <span>CONFIRMAR PEDIDO</span>
-                </>
-              )}
-            </motion.button>
-
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={simulateScan}
-              disabled={scanning}
-              className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-3 px-6 rounded-xl transition-colors border border-gray-700 flex items-center justify-center gap-3"
-            >
-              <Camera className="w-5 h-5" />
-              <span>Simular Escaneo QR</span>
-            </motion.button>
-          </div>
-
-          <AnimatePresence>
-            {feedback && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-4 overflow-hidden"
-              >
-                <div className={`p-4 rounded-xl border ${feedback.type === 'success'
-                  ? 'bg-green-500/10 border-green-500/30'
-                  : feedback.type === 'error'
-                    ? 'bg-red-500/10 border-red-500/30'
-                    : 'bg-blue-500/10 border-blue-500/30'
-                  }`}>
-                  <div className="flex items-start gap-3">
-                    {feedback.type === 'success' && (
-                      <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <CheckCircle className="w-6 h-6 text-green-400" />
-                      </div>
-                    )}
-                    {feedback.type === 'error' && (
-                      <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <AlertTriangle className="w-6 h-6 text-red-400" />
-                      </div>
-                    )}
-                    {feedback.type === 'info' && (
-                      <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Info className="w-6 h-6 text-blue-400" />
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className={`font-bold ${feedback.type === 'success'
-                        ? 'text-green-300'
-                        : feedback.type === 'error'
-                          ? 'text-red-300'
-                          : 'text-blue-300'
-                        }`}>
-                        {feedback.type === 'success'
-                          ? '✓ Solicitud Confirmada'
-                          : feedback.type === 'error'
-                            ? '✗ Error'
-                            : 'ℹ️ Información'}
-                      </p>
-                      <p className="text-sm text-gray-300 mt-1 whitespace-pre-line">{feedback.message}</p>
-
-                      {feedback.type === 'success' && (
-                        <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
-                          <Clock className="w-3 h-3" />
-                          <span>Tiempo estimado de entrega: 15-30 minutos</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={clearFeedback}
-                      className="p-1 hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                      <RotateCcw className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Footer Info */}
-        <div className="mt-8 text-center">
-          <div className="inline-flex items-center gap-2 text-gray-500 text-sm">
-            <Clock className="w-4 h-4" />
-            <span>Actualizado en tiempo real</span>
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
-};
+}; // BUSCÁ ESTA PARTE AL FINAL DE TU CÓDIGO Y REEMPLAZALA
+export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // SI ES MOBILE: Mostramos la vista de Operario (Pasándole el usuario logueado)
+  const isMobile = window.innerWidth < 768;
+
+  if (isMobile) {
+    if (showLogin && !currentUser) {
+      return <LoginScreen onLoginSuccess={() => setShowLogin(false)} />;
+    }
+    return (
+      <div>
+        {/* IMPORTANTE: Acá le pasamos el currentUser como PROP */}
+        <OperatorView currentUser={currentUser} />
+        {!currentUser && (
+          <div className="fixed bottom-6 right-6">
+            <button onClick={() => setShowLogin(true)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg flex items-center gap-2">
+              <User className="w-5 h-5" />Acceso Almacén
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // SI ES DESKTOP: Mostramos el Dashboard de Almacén
+  return <SupplyChainView currentUser={currentUser} />;
+}
 // Component: Supply Chain Dashboard
 const SupplyChainView = () => {
   const [orders, setOrders] = useState([]);
