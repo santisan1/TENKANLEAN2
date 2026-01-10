@@ -8,7 +8,7 @@ import {
   getAuth, signInWithEmailAndPassword, signOut,
   onAuthStateChanged, setPersistence, browserLocalPersistence
 } from 'firebase/auth';
-import { Package, AlertTriangle, LogOut, CheckCircle, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
+import { Package, AlertTriangle, LogOut, CheckCircle, Award, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Firebase Configuration
