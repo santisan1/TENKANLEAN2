@@ -8,7 +8,7 @@ import {
   getAuth, signInWithEmailAndPassword, signOut,
   onAuthStateChanged, setPersistence, browserLocalPersistence
 } from 'firebase/auth';
-import { Package, AlertTriangle, LogOut, CheckCircle, Award, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Factory, Warehouse, Settings, Bell, User, BarChart3 } from 'lucide-react';
+import { Package, AlertTriangle, LogOut, CheckCircle, Award, Truck, Info, RotateCcw, Camera, Clock, MapPin, Activity, Factory, Warehouse, Settings, Bell, User, BarChart3, TrendingUp, TrendingDown, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Firebase Configuration
@@ -497,7 +497,112 @@ const KPIView = ({ currentUser }) => {
       </div>
     );
   }
+  // Dentro del componente KPIView, antes del return, calculamos los datos reales
 
+  // 1. Alertas Predictivas (ejemplo simple)
+  const predictiveAlerts = React.useMemo(() => {
+    const alerts = [];
+
+    // Verificar heatmapData para ver si hay horas con lead time alto
+    heatmapData.forEach(item => {
+      if (item.leadTime > 30) {
+        alerts.push({
+          type: 'critical',
+          title: `Lead Time Alto el ${item.day === 1 ? 'Lunes' : item.day === 2 ? 'Martes' : item.day === 3 ? 'Miércoles' : item.day === 4 ? 'Jueves' : item.day === 5 ? 'Viernes' : 'Sábado'} a las ${item.hour}:00`,
+          message: `El lead time promedio fue de ${item.leadTime} minutos, supera el umbral de 30 minutos.`,
+          time: `${item.hour}:00`,
+          location: 'Varias ubicaciones',
+          confidence: 80
+        });
+      }
+    });
+
+    // Si no hay alertas, agregar una por defecto
+    if (alerts.length === 0) {
+      alerts.push({
+        type: 'info',
+        title: 'Sin alertas críticas',
+        message: 'El lead time se mantiene dentro de los límites establecidos.',
+        time: 'Hoy',
+        location: 'Todas las áreas',
+        confidence: 90
+      });
+    }
+
+    return alerts.slice(0, 2); // Solo mostramos 2 alertas
+  }, [heatmapData]);
+
+  // 2. Tendencia Semanal
+  const weeklyTrendData = React.useMemo(() => {
+    const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+    // Agrupar heatmapData por día
+    const dayGroups = {};
+    heatmapData.forEach(item => {
+      if (item.day >= 1 && item.day <= 5) { // Lunes a Viernes
+        if (!dayGroups[item.day]) {
+          dayGroups[item.day] = {
+            volume: 0,
+            totalLeadTime: 0,
+            totalEfficiency: 0,
+            count: 0
+          };
+        }
+        dayGroups[item.day].volume += item.volume;
+        dayGroups[item.day].totalLeadTime += item.leadTime * item.volume; // leadTime promedio ponderado por volumen
+        dayGroups[item.day].totalEfficiency += item.efficiency * item.volume; // eficiencia ponderada por volumen
+        dayGroups[item.day].count += item.volume;
+      }
+    });
+
+    // Calcular promedios y formatear
+    return daysOfWeek.map((dayName, index) => {
+      const dayNumber = index + 1; // Lunes=1, Martes=2, etc.
+      const dayData = dayGroups[dayNumber];
+
+      if (dayData && dayData.count > 0) {
+        const avgLeadTime = Math.round(dayData.totalLeadTime / dayData.count);
+        const avgEfficiency = Math.round(dayData.totalEfficiency / dayData.count);
+
+        // Calcular el cambio respecto al día anterior (simulado, en realidad necesitaríamos datos históricos)
+        const change = Math.floor(Math.random() * 20) - 10; // Esto es un ejemplo, debería ser real
+
+        return {
+          name: dayName,
+          date: dayNumber === 1 ? 'Hoy' : `-${dayNumber} días`,
+          orders: dayData.volume,
+          change: change,
+          avgLeadTime: avgLeadTime,
+          efficiency: avgEfficiency,
+          operators: Math.floor(Math.random() * 5) + 1 // Esto también debería ser real
+        };
+      } else {
+        // Si no hay datos, mostrar ceros
+        return {
+          name: dayName,
+          date: dayNumber === 1 ? 'Hoy' : `-${dayNumber} días`,
+          orders: 0,
+          change: 0,
+          avgLeadTime: 0,
+          efficiency: 0,
+          operators: 0
+        };
+      }
+    });
+  }, [heatmapData]);
+
+  // 3. Comparativa de Operarios
+  const operatorComparison = React.useMemo(() => {
+    // Usamos kpiData.operatorRanking, pero necesitamos darle el formato que espera el componente
+    return kpiData.operatorRanking.map(op => ({
+      name: op.name,
+      role: 'Operario', // Podríamos tener un campo de rol en el futuro
+      score: op.effortPoints, // Usamos effortPoints como puntuación
+      speed: op.avgEfficiency, // Usamos la eficiencia como velocidad
+      accuracy: op.integrityScore, // Usamos integrityScore como precisión
+      peakHours: [9, 14] // Esto debería calcularse a partir de los datos reales, por ahora ejemplo
+    }));
+  }, [kpiData.operatorRanking]);
   return (
     <div className="space-y-6">
       {/* Filtros */}
@@ -738,7 +843,11 @@ const KPIView = ({ currentUser }) => {
 
                 {/* Filas del heatmap */}
                 <div className="space-y-1.5">
-                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map((day, dayIndex) => (
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map((day, dayIndex) => {
+                    const dayNumber = dayIndex + 1; // 1 = lunes, 5 = viernes
+                    const dayData = heatmapData.find(d => d.day === dayNumber && d.hour === hour);
+                    // ... resto del código
+
                     <div key={day} className="grid grid-cols-12 gap-1.5 items-center">
                       {/* Día */}
                       <div className="col-span-2">
@@ -792,7 +901,9 @@ const KPIView = ({ currentUser }) => {
                         }
 
                         // Determinar si es hora crítica
-                        const isCritical = heatmapMode === 'leadTime' && intensity > 0.7;
+                        // En la sección del heatmap, ajusta el cálculo de isCritical:
+                        const isCritical = heatmapMode === 'leadTime' && value > 30; // Más de 30 minutos es crítico
+
 
                         return (
                           <div
@@ -849,7 +960,7 @@ const KPIView = ({ currentUser }) => {
                         );
                       })}
                     </div>
-                  ))}
+                  })}
                 </div>
               </div>
 
