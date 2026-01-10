@@ -1297,147 +1297,74 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
         });
 
       } else if (newStatus === 'DELIVERED') {
-        console.log('🚀 Iniciando proceso de entrega...');
+        console.log('🚀 Iniciando cierre de pedido desde Dashboard...');
 
         const orderSnap = await getDoc(orderRef);
         if (!orderSnap.exists()) {
           console.error('❌ Pedido no encontrado');
+          alert('Error: Pedido no encontrado');
           return;
         }
 
-        const data = orderSnap.data();
+        const orderData = orderSnap.data();
         console.log('📦 Datos del pedido:', {
           id: orderRef.id,
-          cardId: data.cardId,
-          status: data.status,
-          hasTimestamp: !!data.timestamp,
-          hasDispatchedAt: !!data.dispatchedAt
+          cardId: orderData.cardId,
+          hasTimestamp: !!orderData.timestamp,
+          hasDispatchedAt: !!orderData.dispatchedAt
         });
 
-        // === VALIDAR TIMESTAMPS ===
-        if (!data.timestamp || !data.dispatchedAt) {
-          alert('⚠️ ERROR: El pedido no tiene los timestamps necesarios.\nNo se puede calcular los tiempos.');
-          console.error('❌ Timestamps faltantes:', {
-            timestamp: data.timestamp,
-            dispatchedAt: data.dispatchedAt
-          });
+        // Validar timestamps
+        if (!orderData.timestamp || !orderData.dispatchedAt) {
+          alert('⚠️ ERROR: El pedido no tiene los timestamps necesarios.');
+          console.error('❌ Timestamps faltantes');
           return;
         }
 
-        // === CALCULAR TIEMPOS ===
-        const ahora = Date.now();
-        const creacion = data.timestamp.toMillis();
-        const aceptacion = data.dispatchedAt.toMillis();
-
-        // Forzar que sean números enteros positivos
-        const reactionTime = Math.max(1, Math.floor((aceptacion - creacion) / 60000));
-        const executionTime = Math.max(1, Math.floor((ahora - aceptacion) / 60000));
-        const totalLeadTime = Math.max(1, Math.floor((ahora - creacion) / 60000));
-
-        console.log('⏱️ TIEMPOS CALCULADOS:', {
-          reactionTime,
-          executionTime,
-          totalLeadTime,
-          tipo_reaction: typeof reactionTime,
-          tipo_execution: typeof executionTime,
-          tipo_total: typeof totalLeadTime
-        });
-
-        // Verificar que sean números válidos
-        if (isNaN(reactionTime) || isNaN(executionTime) || isNaN(totalLeadTime)) {
-          alert('⚠️ ERROR: No se pudieron calcular los tiempos correctamente');
-          console.error('❌ Tiempos inválidos');
-          return;
-        }
-
-        // === PARÁMETROS BASE ===
-        const stdTime = Math.max(1, parseInt(data.stdOpTime) || 10);
-        const complexity = Math.max(1, Math.min(5, parseInt(data.complexityWeight) || 1));
-        const targetLT = Math.max(1, parseInt(data.targetLeadTime) || 30);
-
-        console.log('📊 Parámetros:', { stdTime, complexity, targetLT });
-
-        // === MÉTRICAS ===
-        const taskEfficiency = Math.round((stdTime / executionTime) * 100);
-        const loadPoints = complexity * (complexity >= 4 ? 2 : 1);
-        const effortPoints = totalLeadTime <= targetLT ? Math.round(loadPoints * 1.5) : loadPoints;
-        const isSuspicious = executionTime < (stdTime * 0.2);
-        const onTime = totalLeadTime <= targetLT;
-
-        console.log('📈 Métricas:', {
-          taskEfficiency,
-          loadPoints,
-          effortPoints,
-          isSuspicious,
-          onTime
-        });
-
-        // === PASO 1: GUARDAR ORDEN BÁSICA ===
         try {
-          console.log('💾 PASO 1: Guardando orden básica...');
+          // 🔥 USAR LA FUNCIÓN CENTRALIZADA
+          const metrics = calculateOrderMetrics(orderData, new Date());
 
-          const basicOrder = {
-            cardId: data.cardId || 'UNKNOWN',
-            partNumber: data.partNumber || 'UNKNOWN',
-            description: data.description || '',
-            location: data.location || 'UNKNOWN',
-            standardPack: data.standardPack || 0,
-            requestedBy: data.requestedBy || 'Produccion',
+          console.log('⏱️ Métricas calculadas:', {
+            reactionTime: `${metrics.reactionTime} min`,
+            executionTime: `${metrics.executionTime} min`,
+            totalLeadTime: `${metrics.totalLeadTime} min`
+          });
+
+          // Guardar en completed_orders con TODAS las métricas
+          await addDoc(collection(db, 'completed_orders'), {
+            // Datos básicos
+            cardId: orderData.cardId,
+            partNumber: orderData.partNumber,
+            description: orderData.description,
+            location: orderData.location,
+            standardPack: orderData.standardPack,
+            requestedBy: orderData.requestedBy,
+            takenBy: orderData.takenBy,
+
+            // Estado
             status: 'DELIVERED',
             deliveredBy: currentUser.email.split('@')[0],
-            takenBy: data.takenBy || 'UNKNOWN',
+            deliveredAt: serverTimestamp(),
 
             // Timestamps originales
-            timestamp: data.timestamp,
-            dispatchedAt: data.dispatchedAt,
-            deliveredAt: serverTimestamp()
-          };
+            timestamp: orderData.timestamp,
+            dispatchedAt: orderData.dispatchedAt,
 
-          const docRef = await addDoc(collection(db, 'completed_orders'), basicOrder);
-          console.log('✅ PASO 1 OK - ID:', docRef.id);
-
-          // === PASO 2: ACTUALIZAR CON TIEMPOS ===
-          console.log('💾 PASO 2: Agregando tiempos...');
-
-          await updateDoc(doc(db, 'completed_orders', docRef.id), {
-            reactionTime: reactionTime,
-            executionTime: executionTime,
-            totalLeadTime: totalLeadTime,
-            taskEfficiency: taskEfficiency,
-            loadPoints: loadPoints,
-            effortPoints: effortPoints,
-            isSuspicious: isSuspicious,
-            onTime: onTime,
-            complexityWeight: complexity,
-            stdOpTime: stdTime,
-            targetLeadTime: targetLT
+            // 🔥 TODAS LAS MÉTRICAS
+            ...metrics
           });
 
-          console.log('✅ PASO 2 OK - Tiempos guardados');
+          console.log('✅ Pedido guardado en completed_orders');
 
-          // === VERIFICACIÓN ===
-          const savedDoc = await getDoc(doc(db, 'completed_orders', docRef.id));
-          const savedData = savedDoc.data();
-
-          console.log('🔍 VERIFICACIÓN FINAL:', {
-            tiene_reactionTime: !!savedData.reactionTime,
-            tiene_executionTime: !!savedData.executionTime,
-            tiene_totalLeadTime: !!savedData.totalLeadTime,
-            valores: {
-              reactionTime: savedData.reactionTime,
-              executionTime: savedData.executionTime,
-              totalLeadTime: savedData.totalLeadTime
-            }
-          });
-
-          // === ELIMINAR DE ACTIVOS ===
+          // Eliminar de activos
           await deleteDoc(orderRef);
           console.log('✅ Pedido eliminado de active_orders');
 
-          alert(`✅ Pedido completado exitosamente\n\n⏱️ Tiempos:\nReacción: ${reactionTime}min\nEjecución: ${executionTime}min\nTotal: ${totalLeadTime}min`);
+          alert(`✅ Pedido completado\n\n⏱️ Tiempos:\nReacción: ${metrics.reactionTime}min\nEjecución: ${metrics.executionTime}min\nTotal: ${metrics.totalLeadTime}min`);
 
         } catch (error) {
-          console.error('❌ ERROR EN GUARDADO:', error);
+          console.error('❌ ERROR:', error);
           alert(`Error: ${error.message}`);
         }
       }
