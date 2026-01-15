@@ -856,8 +856,8 @@ const KPIView = ({ currentUser }) => {
                 <div className="space-y-1.5">
                   {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map((day, dayIndex) => {
                     const dayNumber = dayIndex + 1; // 1 = lunes, 5 = viernes
-                    const dayData = heatmapData.find(d => d.day === dayIndex + 1 && d.hour === hour);
-                    // ... resto del código
+
+                    // ... resto del código s
 
                     <div key={day} className="grid grid-cols-12 gap-1.5 items-center">
                       {/* Día */}
@@ -939,7 +939,7 @@ const KPIView = ({ currentUser }) => {
                                 <p className="font-bold text-white mb-2">{day} {hour}:00</p>
                                 <div className="space-y-2 text-xs">
                                   <div className="flex justify-between">
-                                    <span className="text-gray-400">Pedidos:</span>
+                                    <span className="text-gray-400">Pedidos: </span>
                                     <span className="text-green-300 font-bold">{dayData?.volume || 0}</span>
                                   </div>
                                   <div className="flex justify-between">
