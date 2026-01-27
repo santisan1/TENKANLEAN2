@@ -2176,7 +2176,7 @@ const MAP_DATA = {
   },
   sectorA: {
     title: 'Detalle: Sector Estantería A',
-    image: '/tu-plano-sector-a.png', // CAMBIA ESTO
+    image: '/tu-plano_bob.png', // CAMBIA ESTO
     pins: [
       { id: 'Rack A-01', x: 20, y: 30 },
       { id: 'Rack A-02', x: 40, y: 30 },
