@@ -2198,7 +2198,7 @@ const PlantMap = ({ locationStatuses, orders }) => {
       </div>
 
       <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
-        // Dentro de tu componente PlantMap...
+        // Dentro de tu componente PlantMap...,
 
         <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair group bg-gray-900">
 
