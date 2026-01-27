@@ -2166,7 +2166,7 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
 const MAP_DATA = {
   general: {
     title: 'Vista General de Planta',
-    image: '/tu-plano.png', // CAMBIA ESTO
+    image: '/tu-plano.png',
     pins: [
       { id: 'Zona 1 - Bobinado', x: 35, y: 24.64, target: 'sectorA' },
       { id: 'Zona 2 - Prestabilizado', x: 55.18, y: 29.64, target: 'sectorB' },
@@ -2176,7 +2176,7 @@ const MAP_DATA = {
   },
   sectorA: {
     title: 'Detalle: Sector Estantería A',
-    image: '/tu-plano_bob.png', // CAMBIA ESTO
+    image: '/tu-plano_bob.png',
     pins: [
       { id: 'Rack A-01', x: 20, y: 30 },
       { id: 'Rack A-02', x: 40, y: 30 },
