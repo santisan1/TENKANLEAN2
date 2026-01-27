@@ -2162,13 +2162,36 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
 
 // Component: Plant Map
 // ============ COMPONENTE: MAPA DE PLANTA RECARGADO ============
-const PlantMap = ({ locationStatuses, orders }) => {
-  const locations = [
-    { id: 'Estantería A', x: 35, y: 24.64 },
-    { id: 'Estantería B', x: 55.18, y: 29.64 },
-    { id: 'Estantería C', x: 56.10, y: 69.22 },
-    { id: 'Estantería D', x: 37.5, y: 66.88 },
-  ];
+// ============ CONFIGURACIÓN DE MAPAS POR SECTOR ============
+const MAP_DATA = {
+  general: {
+    title: 'Vista General de Planta',
+    image: '/tu-plano-general.png', // CAMBIA ESTO
+    pins: [
+      { id: 'Estantería A', x: 35, y: 24.64, target: 'sectorA' },
+      { id: 'Estantería B', x: 55.18, y: 29.64, target: 'sectorB' },
+      { id: 'Estantería C', x: 56.10, y: 69.22, target: 'sectorC' },
+      { id: 'Estantería D', x: 37.5, y: 66.88, target: 'sectorD' },
+    ]
+  },
+  sectorA: {
+    title: 'Detalle: Sector Estantería A',
+    image: '/tu-plano-sector-a.png', // CAMBIA ESTO
+    pins: [
+      { id: 'Rack A-01', x: 20, y: 30 },
+      { id: 'Rack A-02', x: 40, y: 30 },
+      { id: 'Rack A-03', x: 60, y: 30 },
+    ]
+  },
+  // Podés agregar sectorB, sectorC, etc., siguiendo la misma lógica
+};
+
+const PlantMap = ({ locationStatuses }) => {
+  const [activeSector, setActiveSector] = useState('general');
+  const currentConfig = MAP_DATA[activeSector] || MAP_DATA.general;
+
+  // Función para volver al mapa general
+  const goBack = () => setActiveSector('general');
 
   return (
     <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
@@ -2178,90 +2201,96 @@ const PlantMap = ({ locationStatuses, orders }) => {
             <MapPin className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">Mapa de Planta</h2>
-            <p className="text-sm text-gray-400">Desplázate para ver áreas detalladas</p>
+            <h2 className="text-xl font-bold text-white">{currentConfig.title}</h2>
+            <div className="flex items-center gap-2">
+              {activeSector !== 'general' && (
+                <button
+                  onClick={goBack}
+                  className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded transition-colors flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" /> VOLVER AL GENERAL
+                </button>
+              )}
+              <p className="text-xs text-gray-400 font-mono">Modo: Drag interactivo</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* VISOR (El contenedor con scroll) */}
-      <div className="relative rounded-xl border-2 border-gray-700 h-[500px] overflow-auto bg-gray-950 custom-scrollbar">
+      {/* VISOR (Viewport fijo) */}
+      <div className="relative rounded-xl border-2 border-gray-700 h-[550px] overflow-hidden bg-gray-950 cursor-grab active:cursor-grabbing">
 
-        {/* EL CONTENIDO (Este div es el que mantiene la proporción) */}
-        <div className="relative w-full min-w-[1000px] aspect-[16/9]">
-          {/* Nota: Puse min-w-[1000px] para forzar a que sea grande y salga el scroll. 
-             El aspect-[16/9] mantenlo según sea la forma de tu imagen real.
-          */}
-
+        {/* EL "CANVAS" ARRASTRABLE */}
+        <motion.div
+          drag
+          dragConstraints={{ left: -1000, right: 0, top: -600, bottom: 0 }} // Ajusta según el tamaño de tu imagen
+          dragElastic={0.1}
+          dragMomentum={true}
+          className="relative origin-top-left"
+          style={{ width: '2000px', height: '1200px' }} // Hacemos el lienzo gigante para el drag
+        >
           {/* IMAGEN DE FONDO */}
           <img
-            src="/tu-plano.png"
-            alt="Plano de Planta"
-            className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+            src={currentConfig.image}
+            alt="Plano"
+            className="absolute inset-0 w-full h-full object-cover opacity-50 select-none pointer-events-none"
           />
 
-          {/* RENDERIZADO DE LOS PUNTOS (Recuperados) */}
-          {locations.map(location => {
-            const status = locationStatuses[location.id];
+          {/* RENDERIZADO DE PINES */}
+          {currentConfig.pins.map((pin) => {
+            const status = locationStatuses[pin.id];
             let color = 'bg-gray-500';
             let shouldPulse = false;
-            let ringColor = 'ring-gray-500/30';
 
             if (status?.pending) {
               color = 'bg-red-500';
               shouldPulse = true;
-              ringColor = 'ring-red-500/50';
             } else if (status?.inTransit) {
               color = 'bg-yellow-500';
               shouldPulse = true;
-              ringColor = 'ring-yellow-500/50';
             }
 
             return (
               <motion.div
-                key={location.id}
-                className="absolute z-20"
-                style={{
-                  left: `${location.x}%`,
-                  top: `${location.y}%`,
-                  transform: 'translate(-50%, -50%)' // Centra el punto exacto
-                }}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
+                key={pin.id}
+                className="absolute z-20 cursor-pointer"
+                style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                whileHover={{ scale: 1.2 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => pin.target && setActiveSector(pin.target)} // Aquí ocurre la magia del drill-down
               >
-                <div className="relative">
-                  {/* Efecto de Pulso */}
+                <div className="relative -translate-x-1/2 -translate-y-1/2">
                   {shouldPulse && (
                     <motion.div
                       className={`absolute inset-0 ${color} rounded-full`}
-                      animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
+                      animate={{ scale: [1, 2.5], opacity: [0.5, 0] }}
                       transition={{ duration: 2, repeat: Infinity }}
                     />
                   )}
 
-                  {/* Pin Físico */}
-                  <div className={`relative z-10 w-5 h-5 ${color} rounded-full border-2 border-white shadow-xl flex items-center justify-center`}>
-                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  <div className={`relative z-10 w-6 h-6 ${color} rounded-full border-2 border-white shadow-2xl flex items-center justify-center`}>
+                    {pin.target ? (
+                      <div className="w-1 h-1 bg-white rounded-full"></div>
+                    ) : (
+                      <div className="w-1.5 h-1.5 bg-white/50 rounded-full animate-pulse"></div>
+                    )}
                   </div>
 
-                  {/* Etiqueta flotante */}
-                  <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <div className="bg-gray-900/90 backdrop-blur-md px-2 py-1 rounded border border-gray-700 shadow-2xl">
-                      <p className="text-[10px] font-black text-white uppercase tracking-tighter">
-                        {location.id}
-                      </p>
-                    </div>
+                  {/* Tooltip con nombre */}
+                  <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900 px-2 py-1 rounded border border-gray-700 shadow-xl pointer-events-none">
+                    <p className="text-[10px] font-black text-white whitespace-nowrap">
+                      {pin.id} {pin.target ? '🔍' : ''}
+                    </p>
                   </div>
                 </div>
               </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       </div>
 
-      {/* Mini leyenda de ayuda */}
-      <p className="text-[10px] text-gray-500 mt-2 text-center italic">
-        💡 Usa el scroll horizontal y vertical para navegar por la planta
+      <p className="text-[10px] text-gray-500 mt-2 text-center">
+        🖱️ Arrastrá el mapa para navegar • Hacé click en un sector con lupa 🔍 para entrar
       </p>
     </div>
   );
