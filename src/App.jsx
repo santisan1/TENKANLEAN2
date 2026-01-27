@@ -2161,6 +2161,7 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
 // ============ COMPONENTES AUXILIARES ============
 
 // Component: Plant Map
+// ============ COMPONENTE: MAPA DE PLANTA RECARGADO ============
 const PlantMap = ({ locationStatuses, orders }) => {
   const locations = [
     { id: 'Estantería A', x: 35, y: 24.64 },
@@ -2178,57 +2179,90 @@ const PlantMap = ({ locationStatuses, orders }) => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">Mapa de Planta</h2>
-            <p className="text-sm text-gray-400">Estado en tiempo real por área</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 rounded-lg">
-            <div className="w-2 h-2 rounded-full bg-red-500"></div>
-            <span className="text-xs text-red-300">Pendiente</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 rounded-lg">
-            <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-            <span className="text-xs text-yellow-300">En Tránsito</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 rounded-lg">
-            <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-            <span className="text-xs text-gray-300">Normal</span>
+            <p className="text-sm text-gray-400">Desplázate para ver áreas detalladas</p>
           </div>
         </div>
       </div>
 
-      <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
-        // Dentro de tu componente PlantMap...,
+      {/* VISOR (El contenedor con scroll) */}
+      <div className="relative rounded-xl border-2 border-gray-700 h-[500px] overflow-auto bg-gray-950 custom-scrollbar">
 
-        <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair group bg-gray-900">
+        {/* EL CONTENIDO (Este div es el que mantiene la proporción) */}
+        <div className="relative w-full min-w-[1000px] aspect-[16/9]">
+          {/* Nota: Puse min-w-[1000px] para forzar a que sea grande y salga el scroll. 
+             El aspect-[16/9] mantenlo según sea la forma de tu imagen real.
+          */}
 
-          {/* --- LA IMAGEN DEL PLANO --- */}
+          {/* IMAGEN DE FONDO */}
           <img
-            src="\tu-plano.png" // O la URL de Firebase Storage
+            src="/tu-plano.png"
             alt="Plano de Planta"
-            className="absolute inset-0 w-full h-full object-contain opacity-50"
+            className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
           />
 
-          {/* Capa de degradado opcional para estética */}
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/40 via-transparent to-transparent pointer-events-none"></div>
-
-          {/* Renderizado de los puntos (esto ya lo tenías bien) */}
+          {/* RENDERIZADO DE LOS PUNTOS (Recuperados) */}
           {locations.map(location => {
             const status = locationStatuses[location.id];
-            // ... resto de tu lógica de coloraes
+            let color = 'bg-gray-500';
+            let shouldPulse = false;
+            let ringColor = 'ring-gray-500/30';
+
+            if (status?.pending) {
+              color = 'bg-red-500';
+              shouldPulse = true;
+              ringColor = 'ring-red-500/50';
+            } else if (status?.inTransit) {
+              color = 'bg-yellow-500';
+              shouldPulse = true;
+              ringColor = 'ring-yellow-500/50';
+            }
+
             return (
               <motion.div
                 key={location.id}
-                className="absolute"
-                style={{ left: `${location.x}%`, top: `${location.y}%` }}
-              // ... resto del motion.div
+                className="absolute z-20"
+                style={{
+                  left: `${location.x}%`,
+                  top: `${location.y}%`,
+                  transform: 'translate(-50%, -50%)' // Centra el punto exacto
+                }}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
               >
-                {/* Tu pin de ubicación */}
+                <div className="relative">
+                  {/* Efecto de Pulso */}
+                  {shouldPulse && (
+                    <motion.div
+                      className={`absolute inset-0 ${color} rounded-full`}
+                      animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                  )}
+
+                  {/* Pin Físico */}
+                  <div className={`relative z-10 w-5 h-5 ${color} rounded-full border-2 border-white shadow-xl flex items-center justify-center`}>
+                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+
+                  {/* Etiqueta flotante */}
+                  <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    <div className="bg-gray-900/90 backdrop-blur-md px-2 py-1 rounded border border-gray-700 shadow-2xl">
+                      <p className="text-[10px] font-black text-white uppercase tracking-tighter">
+                        {location.id}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </motion.div>
             );
           })}
         </div>
       </div>
+
+      {/* Mini leyenda de ayuda */}
+      <p className="text-[10px] text-gray-500 mt-2 text-center italic">
+        💡 Usa el scroll horizontal y vertical para navegar por la planta
+      </p>
     </div>
   );
 };
