@@ -2198,73 +2198,32 @@ const PlantMap = ({ locationStatuses, orders }) => {
       </div>
 
       <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden">
-        <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair group">
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-950/40 pointer-events-none">
-            <div className="w-full h-full bg-gray-800/20 flex items-center justify-center">
-              <div className="text-center">
-                <MapPin className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-500">Plano de planta</p>
-                <p className="text-gray-600 text-sm">Aquí iría la imagen del plano</p>
-              </div>
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-gray-950/70 via-transparent to-transparent"></div>
-          </div>
+        // Dentro de tu componente PlantMap...
 
+        <div className="relative rounded-xl border-2 border-gray-700 h-96 overflow-hidden cursor-crosshair group bg-gray-900">
+
+          {/* --- LA IMAGEN DEL PLANO --- */}
+          <img
+            src="\tu-plano.png" // O la URL de Firebase Storage
+            alt="Plano de Planta"
+            className="absolute inset-0 w-full h-full object-contain opacity-50"
+          />
+
+          {/* Capa de degradado opcional para estética */}
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/40 via-transparent to-transparent pointer-events-none"></div>
+
+          {/* Renderizado de los puntos (esto ya lo tenías bien) */}
           {locations.map(location => {
             const status = locationStatuses[location.id];
-            let color = 'bg-gray-600';
-            let shouldPulse = false;
-            let ringColor = 'ring-gray-500';
-
-            if (status?.pending) {
-              color = 'bg-red-500';
-              shouldPulse = true;
-              ringColor = 'ring-red-500/50';
-            } else if (status?.inTransit) {
-              color = 'bg-yellow-500';
-              shouldPulse = true;
-              ringColor = 'ring-yellow-500/50';
-            }
-
+            // ... resto de tu lógica de coloraes
             return (
               <motion.div
                 key={location.id}
                 className="absolute"
                 style={{ left: `${location.x}%`, top: `${location.y}%` }}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                whileHover={{ scale: 1.1 }}
+              // ... resto del motion.div
               >
-                <div className="relative -translate-x-1/2 -translate-y-1/2">
-                  {shouldPulse && (
-                    <motion.div
-                      className={`absolute inset-0 ${color} rounded-full opacity-75`}
-                      animate={{ scale: [1, 1.5, 1.5], opacity: [0.5, 0, 0] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                    />
-                  )}
-                  <div className={`relative z-10 ${ringColor} ring-4`}>
-                    <div className={`w-6 h-6 ${color} rounded-full flex items-center justify-center shadow-lg`}>
-                      <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                    </div>
-                  </div>
-                  <div className="absolute top-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <div className="bg-gray-900/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-gray-700 min-w-[120px]">
-                      <p className="text-xs font-bold text-white text-center">{location.id}</p>
-                      <div className="flex items-center justify-center gap-2 mt-1">
-                        {status?.pending && (
-                          <span className="text-xs text-red-400 font-medium">Pendiente</span>
-                        )}
-                        {status?.inTransit && (
-                          <span className="text-xs text-yellow-400 font-medium">En tránsito</span>
-                        )}
-                        {!status?.pending && !status?.inTransit && (
-                          <span className="text-xs text-gray-400 font-medium">Normal</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Tu pin de ubicación */}
               </motion.div>
             );
           })}
