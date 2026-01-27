@@ -2168,10 +2168,10 @@ const MAP_DATA = {
     title: 'Vista General de Planta',
     image: '/tu-plano-general.png', // CAMBIA ESTO
     pins: [
-      { id: 'Estantería A', x: 35, y: 24.64, target: 'sectorA' },
-      { id: 'Estantería B', x: 55.18, y: 29.64, target: 'sectorB' },
-      { id: 'Estantería C', x: 56.10, y: 69.22, target: 'sectorC' },
-      { id: 'Estantería D', x: 37.5, y: 66.88, target: 'sectorD' },
+      { id: 'Zona 1 - Bobinado', x: 35, y: 24.64, target: 'sectorA' },
+      { id: 'Zona 2 - Prestabilizado', x: 55.18, y: 29.64, target: 'sectorB' },
+      { id: 'Zona 3 - Montaje', x: 56.10, y: 69.22, target: 'sectorC' },
+
     ]
   },
   sectorA: {
