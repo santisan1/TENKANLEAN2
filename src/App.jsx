@@ -2258,7 +2258,8 @@ const PlantMap = ({ locationStatuses }) => {
       </div>
 
       {/* CONTENEDOR DEL MAPA */}
-      <div className="relative rounded-xl border-2 border-gray-700 h-[550px] overflow-hidden bg-gray-950 shadow-inner">
+      <div className="relative rounded-xl border-2 border-gray-700 h-[550px] overflow-hidden bg-gray-950 shadow-inner" onClick={handleMapClick} // <--- AGREGAMOS EL CLICK ACÁ
+      >
 
         {/* 🔥 BOTÓN LUPA (Top Right) */}
         <button
