@@ -2025,16 +2025,26 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
     } catch (error) { console.error('Error al cerrar pedido:', error); }
   };
 
+  // Lógica para que titile tanto la Zona como el Rack específico
   const locationStatuses = orders.reduce((acc, order) => {
-    const loc = order.location || 'Unknown';
-    if (!acc[loc]) {
-      acc[loc] = { pending: false, inTransit: false };
+    const z = order.zona;     // Ej: "Zona 1"
+    const l = order.location; // Ej: "Rack A-01"
+
+    // Marcar la Zona (para el mapa general)
+    if (z) {
+      if (!acc[z]) acc[z] = { pending: false, inTransit: false };
+      if (order.status === 'PENDING') acc[z].pending = true;
+      if (order.status === 'IN_TRANSIT') acc[z].inTransit = true;
     }
-    if (order.status === 'PENDING') acc[loc].pending = true;
-    if (order.status === 'IN_TRANSIT') acc[loc].inTransit = true;
+
+    // Marcar el Rack (para el mapa de detalle)
+    if (l) {
+      if (!acc[l]) acc[l] = { pending: false, inTransit: false };
+      if (order.status === 'PENDING') acc[l].pending = true;
+      if (order.status === 'IN_TRANSIT') acc[l].inTransit = true;
+    }
     return acc;
   }, {});
-
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Top Navigation Bar */}
@@ -2491,40 +2501,54 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon, color, showAction
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* ZONA (Sector General) */}
+        <div className="bg-gray-900/50 rounded-lg p-3 border border-blue-500/20">
+          <div className="text-[10px] text-blue-400 uppercase font-bold mb-1">Sector</div>
+          <div className="flex items-center gap-2">
+            <Factory className="w-3 h-3 text-blue-400" />
+            <span className="font-bold text-white text-sm">{order.zona || 'S/Z'}</span>
+          </div>
+        </div>
+
+        {/* RACK (Ubicación Específica) */}
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-1">Ubicación</div>
+          <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Ubicación</div>
           <div className="flex items-center gap-2">
             <MapPin className="w-3 h-3 text-gray-400" />
-            <span className="font-medium text-white">{order.location}</span>
+            <span className="font-medium text-white text-sm">{order.location}</span>
           </div>
         </div>
-        {order.takenBy && (
-          <div className="bg-gray-900/50 rounded-lg p-3">
-            <div className="text-xs text-gray-400 mb-1">Tomado por</div>
-            <div className="flex items-center gap-2">
-              <User className="w-3 h-3 text-blue-400" />
-              <span className="font-medium text-blue-300">{order.takenBy}</span>
-            </div>
-          </div>
-        )}
+        {/* ... resto de campos (Tomado por, Pack) ... */}
+      </div>
+      {order.takenBy && (
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-1">Pack Estándar</div>
-          <div className="font-medium text-white">{order.standardPack} unidades</div>
+          <div className="text-xs text-gray-400 mb-1">Tomado por</div>
+          <div className="flex items-center gap-2">
+            <User className="w-3 h-3 text-blue-400" />
+            <span className="font-medium text-blue-300">{order.takenBy}</span>
+          </div>
         </div>
+      )}
+      <div className="bg-gray-900/50 rounded-lg p-3">
+        <div className="text-xs text-gray-400 mb-1">Pack Estándar</div>
+        <div className="font-medium text-white">{order.standardPack} unidades</div>
       </div>
 
+
       {/* SOLO mostrar botón si showAction es true */}
-      {showAction && onAction && (
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onAction(order.id)}
-          className={`w-full ${buttonClasses[color]} text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3`}
-        >
-          {actionIcon}
-          {actionLabel}
-        </motion.button>
-      )}
-    </motion.div>
+      {
+        showAction && onAction && (
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => onAction(order.id)}
+            className={`w-full ${buttonClasses[color]} text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3`}
+          >
+            {actionIcon}
+            {actionLabel}
+          </motion.button>
+        )
+      }
+    </motion.div >
   );
 };
 
