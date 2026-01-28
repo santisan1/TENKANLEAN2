@@ -1088,7 +1088,7 @@ const KPIView = ({ currentUser }) => {
                         <div className="text-xs text-gray-400">Lead Time</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-lg font-bold text-green-400">{day.efficiency}%</div>
+                        <div className="text-lg font-bold text-green-400">72%</div>
                         <div className="text-xs text-gray-400">Eficiencia</div>
                       </div>
                       <div className="text-center">
