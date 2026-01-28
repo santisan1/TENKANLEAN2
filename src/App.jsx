@@ -2097,15 +2097,17 @@ const MAP_DATA = {
 
 const PlantMap = ({ locationStatuses }) => {
   const [activeSector, setActiveSector] = useState('general');
-  const [isInteractive, setIsInteractive] = useState(false); // 🔥 Control de modo Lupa
+  const [isInteractive, setIsInteractive] = useState(false); // Por defecto: Imagen completa
   const currentConfig = MAP_DATA[activeSector] || MAP_DATA.general;
 
+  // Al volver atrás, siempre reseteamos a vista completa
   const goBack = () => {
     setActiveSector('general');
-    setIsInteractive(false); // Al volver al general, reseteamos el zoom
+    setIsInteractive(false);
   };
+
+  // Función para capturar coordenadas (Consola F12)
   const handleMapClick = (e) => {
-    // Solo logueamos si la lupa está APAGADA (en vista completa)
     if (!isInteractive) {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -2113,6 +2115,7 @@ const PlantMap = ({ locationStatuses }) => {
       console.log(`📍 Coordenadas para ${activeSector}: x: ${x.toFixed(2)}, y: ${y.toFixed(2)}`);
     }
   };
+
   const toggleInteractive = () => setIsInteractive(!isInteractive);
 
   return (
@@ -2134,71 +2137,65 @@ const PlantMap = ({ locationStatuses }) => {
                 </button>
               )}
               <p className="text-xs text-gray-400 font-mono">
-                Estado: {isInteractive ? '🔍 Modo Detalle (Drag)' : '📱 Vista General'}
+                {isInteractive ? '🔍 Modo Zoom Activo' : '📱 Vista Previa'}
               </p>
             </div>
           </div>
         </div>
 
-        {/* LEYENDA RÁPIDA */}
         <div className="flex gap-4">
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_red]"></div><span className="text-[10px] text-gray-400 uppercase">Pendiente</span></div>
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_8px_yellow]"></div><span className="text-[10px] text-gray-400 uppercase">En Tránsito</span></div>
         </div>
       </div>
 
-      {/* CONTENEDOR DEL MAPA */}
-      <div className="relative rounded-xl border-2 border-gray-700 h-[550px] overflow-hidden bg-gray-950 shadow-inner" onClick={handleMapClick} // <--- AGREGAMOS EL CLICK ACÁ
+      <div
+        className="relative rounded-xl border-2 border-gray-700 h-[550px] overflow-hidden bg-gray-950 shadow-inner"
+        onClick={handleMapClick}
       >
-
-        {/* 🔥 BOTÓN LUPA (Top Right) */}
+        {/* BOTÓN LUPA / ZOOM */}
         <button
-          onClick={toggleInteractive}
+          onClick={(e) => {
+            e.stopPropagation(); // Evita que el click en el botón dispare el log de coordenadas
+            toggleInteractive();
+          }}
           className={`absolute top-4 right-4 z-50 p-3 rounded-full shadow-2xl transition-all duration-300 border-2 ${isInteractive
-            ? 'bg-red-500 border-red-400 text-white rotate-90'
+            ? 'bg-red-500 border-red-400 text-white'
             : 'bg-blue-600 border-blue-400 text-white hover:scale-110'
             }`}
-          title={isInteractive ? "Cerrar Zoom" : "Activar Lupa / Detalle"}
         >
           {isInteractive ? <Minimize2 className="w-6 h-6" /> : <Search className="w-6 h-6" />}
         </button>
 
-        {/* EL "CANVAS" - Cambia comportamiento según isInteractive */}
+        {/* LIENZO DEL MAPA */}
         <motion.div
-          drag={isInteractive} // Solo dragueable si la lupa está activa
+          drag={isInteractive} // Solo se puede arrastrar si tocaste la lupa
           dragConstraints={{ left: -1000, right: 0, top: -600, bottom: 0 }}
-          dragElastic={0.1}
-          dragMomentum={true}
           animate={{
             width: isInteractive ? '2000px' : '100%',
             height: isInteractive ? '1200px' : '100%',
-            x: isInteractive ? -250 : 0, // Un offset inicial para que no aparezca en la esquina
-            y: isInteractive ? -150 : 0
+            x: isInteractive ? -300 : 0,
+            y: isInteractive ? -200 : 0
           }}
-          transition={{ type: "spring", damping: 20, stiffness: 100 }}
-          className={`relative origin-top-left ${isInteractive ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+          transition={{ type: "spring", damping: 25, stiffness: 120 }}
+          className={`relative origin-top-left ${isInteractive ? 'cursor-grab active:cursor-grabbing' : 'cursor-default flex items-center justify-center'}`}
         >
-          {/* IMAGEN DE FONDO */}
           <img
             src={currentConfig.image}
             alt="Plano"
-            className={`absolute inset-0 w-full h-full select-none pointer-events-none transition-opacity duration-500 ${isInteractive ? 'object-cover opacity-60' : 'object-contain opacity-80'
-              }`}
+            className={`transition-all duration-500 ${isInteractive
+              ? 'absolute inset-0 w-full h-full object-cover opacity-60'
+              : 'max-w-full max-h-full object-contain opacity-100'
+              } select-none pointer-events-none`}
           />
 
-          {/* RENDERIZADO DE PINES */}
           {currentConfig.pins.map((pin) => {
             const status = locationStatuses[pin.id];
             let color = 'bg-gray-500';
             let shouldPulse = false;
 
-            if (status?.pending) {
-              color = 'bg-red-500';
-              shouldPulse = true;
-            } else if (status?.inTransit) {
-              color = 'bg-yellow-500';
-              shouldPulse = true;
-            }
+            if (status?.pending) { color = 'bg-red-500'; shouldPulse = true; }
+            else if (status?.inTransit) { color = 'bg-yellow-500'; shouldPulse = true; }
 
             return (
               <motion.div
@@ -2206,14 +2203,15 @@ const PlantMap = ({ locationStatuses }) => {
                 className="absolute z-20"
                 style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
                 whileHover={{ scale: 1.3 }}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation(); // Evita loguear coordenadas al tocar un pin
                   if (pin.target) {
                     setActiveSector(pin.target);
-                    setIsInteractive(true); // Al entrar a un sector, activamos la interactividad
+                    setIsInteractive(false); // 🔥 Al entrar a un sector nuevo, volvemos a vista completa
                   }
                 }}
               >
-                <div className="relative -translate-x-1/2 -translate-y-1/2 cursor-pointer">
+                <div className="relative -translate-x-1/2 -translate-y-1/2 cursor-pointer group">
                   {shouldPulse && (
                     <motion.div
                       className={`absolute inset-0 ${color} rounded-full`}
@@ -2221,14 +2219,13 @@ const PlantMap = ({ locationStatuses }) => {
                       transition={{ duration: 2, repeat: Infinity }}
                     />
                   )}
-
                   <div className={`relative z-10 ${isInteractive ? 'w-6 h-6' : 'w-4 h-4'} ${color} rounded-full border-2 border-white shadow-lg flex items-center justify-center transition-all`}>
                     <div className="w-1 h-1 bg-white rounded-full"></div>
                   </div>
 
-                  {/* Tooltip con nombre (Solo se ve bien en modo lupa o si no hay muchos pines) */}
-                  <div className={`absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur px-2 py-1 rounded border border-gray-700 shadow-xl pointer-events-none transition-opacity ${isInteractive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                    <p className="text-[10px] font-black text-white whitespace-nowrap uppercase tracking-tighter">
+                  {/* Tooltip visible solo al pasar el mouse */}
+                  <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur px-2 py-1 rounded border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <p className="text-[10px] font-black text-white whitespace-nowrap uppercase">
                       {pin.id} {pin.target ? '🔍' : ''}
                     </p>
                   </div>
@@ -2238,12 +2235,11 @@ const PlantMap = ({ locationStatuses }) => {
           })}
         </motion.div>
 
-        {/* OVERLAY DE AYUDA CUANDO NO ES INTERACTIVO */}
         {!isInteractive && (
-          <div className="absolute inset-0 pointer-events-none flex items-end justify-center pb-6">
-            <div className="bg-blue-600/20 backdrop-blur-sm border border-blue-500/30 px-4 py-2 rounded-full flex items-center gap-2">
-              <Search className="w-4 h-4 text-blue-400" />
-              <span className="text-xs font-bold text-blue-100">Click en la lupa para explorar el detalle</span>
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none">
+            <div className="bg-gray-900/80 backdrop-blur border border-gray-700 px-4 py-2 rounded-full flex items-center gap-2">
+              <Search className="w-3 h-3 text-blue-400" />
+              <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Click en lupa para zoom</span>
             </div>
           </div>
         )}
