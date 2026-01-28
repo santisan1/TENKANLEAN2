@@ -2078,8 +2078,8 @@ const MAP_DATA = {
     title: 'Detalle: Sector Estantería A',
     image: '/tu-plano_bob.png',
     pins: [
-      { id: 'Rack A-01', x: 30.48, y: 25.20 },
-      { id: 'Rack A-02', x: 56.35, y: 23.57 },
+      { id: 'Rack A-01', x: 36.72, y: 30.73 },
+      { id: 'Rack A-02', x: 54.06, y: 27.82 },
       { id: 'Rack A-03', x: 56.82, y: 66.11 },
     ]
   },
@@ -2088,7 +2088,7 @@ const MAP_DATA = {
     image: '/tu-plano_bob.png',
     pins: [
       { id: 'Rack A-01', x: 20, y: 30 },
-      { id: 'Rack A-02', x: 40, y: 30 },
+      { id: 'Rack A-02', x: 54.06, y: 27.82 },
       { id: 'Rack A-03', x: 60, y: 30 },
     ]
   },
