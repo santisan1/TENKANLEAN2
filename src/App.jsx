@@ -1308,162 +1308,52 @@ const KPIView = ({ currentUser }) => {
   );
 };
 const StatsOverview = () => {
-  const [stats, setStats] = useState({
-    avgLeadTime: 0,
-    slaRate: 0,
-    deliveredToday: 0,
-    pendingCount: 0,
-    inTransitCount: 0
-  });
+  const [stats, setStats] = useState({ avgLeadTime: 0, slaRate: 0, deliveredToday: 0, pendingCount: 0, inTransitCount: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // 1. OBTENER PEDIDOS COMPLETADOS DEL DÍA
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const completedQuery = query(
-          collection(db, 'completed_orders'),
-          where('deliveredAt', '>=', today)
-        );
+        const [compSnap, actSnap] = await Promise.all([
+          getDocs(query(collection(db, 'completed_orders'), where('deliveredAt', '>=', today))),
+          getDocs(query(collection(db, 'active_orders')))
+        ]);
 
-        const completedSnapshot = await getDocs(completedQuery);
-        const completedOrders = completedSnapshot.docs.map(doc => doc.data());
+        const completed = compSnap.docs.map(d => d.data());
+        const active = actSnap.docs.map(d => d.data());
 
-        // 2. CALCULAR LEAD TIME PROMEDIO
-        const leadTimes = completedOrders
-          .filter(o => o.totalLeadTime)
-          .map(o => o.totalLeadTime);
-
-        const avgLT = leadTimes.length > 0
-          ? Math.round(leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length)
+        // Usamos los campos numéricos de tu Firebase
+        const avgLT = completed.length > 0
+          ? Math.round(completed.reduce((a, b) => a + (b.totalLeadTime || 0), 0) / completed.length)
           : 0;
 
-        // 3. CALCULAR SLA SUCCESS RATE
-        const onTimeCount = completedOrders.filter(o => o.onTime).length;
-        const slaRate = completedOrders.length > 0
-          ? Math.round((onTimeCount / completedOrders.length) * 100)
+        const sla = completed.length > 0
+          ? Math.round((completed.filter(o => o.onTime).length / completed.length) * 100)
           : 0;
-
-        // 4. OBTENER PEDIDOS ACTIVOS
-        const activeQuery = query(
-          collection(db, 'active_orders'),
-          where('status', 'in', ['PENDING', 'IN_TRANSIT'])
-        );
-
-        const activeSnapshot = await getDocs(activeQuery);
-        const activeOrders = activeSnapshot.docs.map(doc => doc.data());
-
-        const pendingCount = activeOrders.filter(o => o.status === 'PENDING').length;
-        const inTransitCount = activeOrders.filter(o => o.status === 'IN_TRANSIT').length;
 
         setStats({
           avgLeadTime: avgLT,
-          slaRate,
-          deliveredToday: completedOrders.length,
-          pendingCount,
-          inTransitCount
+          slaRate: sla,
+          deliveredToday: completed.length,
+          pendingCount: active.filter(o => o.status === 'PENDING').length,
+          inTransitCount: active.filter(o => o.status === 'IN_TRANSIT').length
         });
-
-      } catch (error) {
-        console.error('Error fetching stats:', error);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); } finally { setLoading(false); }
     };
-
     fetchStats();
-    const interval = setInterval(fetchStats, 30000); // Actualizar cada 30 segundos
-    return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="bg-gray-900/50 rounded-xl border border-gray-800 p-6 animate-pulse">
-            <div className="h-20 bg-gray-800 rounded"></div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  if (loading) return <div className="grid grid-cols-4 gap-4 mb-6 animate-pulse">{[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-gray-800 rounded-xl" />)}</div>;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      {/* Visión General */}
-      <div className="col-span-1 md:col-span-2">
-        <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-white">Visión General</h2>
-              <p className="text-sm text-gray-400">Estado actual del flujo de materiales</p>
-            </div>
-            <BarChart3 className="w-6 h-6 text-blue-400" />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <StatCard
-              icon={<Clock className="w-5 h-5" />}
-              label="Pendientes"
-              value={stats.pendingCount}
-              color="red"
-              trend={stats.pendingCount > 5 ? `+${stats.pendingCount - 5}` : null}
-            />
-            <StatCard
-              icon={<Truck className="w-5 h-5" />}
-              label="En Tránsito"
-              value={stats.inTransitCount}
-              color="yellow"
-            />
-            <StatCard
-              icon={<CheckCircle className="w-5 h-5" />}
-              label="Entregados Hoy"
-              value={stats.deliveredToday}
-              color="green"
-              trend={stats.deliveredToday > 0 ? `+${stats.deliveredToday}` : null}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Rendimiento */}
-      <div className="col-span-1 md:col-span-2">
-        <div className="bg-gray-900/50 backdrop-blur-sm rounded-xl border border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-white">Rendimiento</h2>
-              <p className="text-sm text-gray-400">Métricas de tiempo de entrega</p>
-            </div>
-            <Activity className="w-6 h-6 text-green-400" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-gray-800/50 rounded-lg p-4">
-              <div className="text-3xl font-bold text-white">
-                {stats.avgLeadTime > 0 ? `${stats.avgLeadTime}min` : '--:--'}
-              </div>
-              <div className="text-sm text-gray-400">Tiempo promedio</div>
-              {stats.avgLeadTime > 0 && (
-                <div className="text-xs text-green-400 mt-1">
-                  {stats.avgLeadTime < 20 ? '↓ Muy bueno' : stats.avgLeadTime < 30 ? '→ Normal' : '↑ Alto'}
-                </div>
-              )}
-            </div>
-            <div className="bg-gray-800/50 rounded-lg p-4">
-              <div className="text-3xl font-bold text-white">
-                {stats.slaRate > 0 ? `${stats.slaRate}%` : '0%'}
-              </div>
-              <div className="text-sm text-gray-400">Tasa de cumplimiento</div>
-              {stats.slaRate > 0 && (
-                <div className={`text-xs mt-1 ${stats.slaRate >= 90 ? 'text-green-400' : 'text-yellow-400'}`}>
-                  {stats.slaRate >= 90 ? '↑ Excelente' : '→ Mejorable'}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <StatCard icon={<Clock />} label="Lead Time Promedio" value={`${stats.avgLeadTime}min`} color="blue" />
+      <StatCard icon={<CheckCircle />} label="Entregados Hoy" value={stats.deliveredToday} color="green" />
+      <StatCard icon={<Activity />} label="Cumplimiento SLA" value={`${stats.slaRate}%`} color="yellow" />
+      <StatCard icon={<Truck />} label="En Proceso" value={stats.pendingCount + stats.inTransitCount} color="purple" />
     </div>
   );
 };
