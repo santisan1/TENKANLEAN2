@@ -2180,7 +2180,7 @@ const MAP_DATA = {
     pins: [
       // CAMBIAMOS EL ID PARA QUE COINCIDA CON FIREBASE
       { id: 'Zona 1', label: 'Zona 1 - Bobinado', x: 60, y: 50, target: 'sectorA' },
-      { id: 'Zona 2', label: 'Zona 2 - Prestabilizado', x: 55.18, y: 29.64, target: 'sectorB' },
+      { id: 'Zona 2', label: 'Zona 2 - Prestabilizado', x: 51.45, y: 29.27, target: 'sectorB' },
       { id: 'Zona 3', label: 'Zona 3 - Montaje', x: 46.94, y: 44.00, target: 'sectorC' },
     ]
   },
@@ -2188,9 +2188,9 @@ const MAP_DATA = {
     title: 'Detalle: Sector Estantería A',
     image: '/tu-plano_bob.png',
     pins: [
-      { id: 'Rack A-01', x: 20, y: 30 },
-      { id: 'Rack A-02', x: 40, y: 30 },
-      { id: 'Rack A-03', x: 60, y: 30 },
+      { id: 'Rack A-01', x: 23.46, y: 24.00 },
+      { id: 'Rack A-02', x: 59.52, y: 28.73 },
+      { id: 'Rack A-03', x: 60.03, y: 73.64 },
     ]
   },
   sectorB: {
