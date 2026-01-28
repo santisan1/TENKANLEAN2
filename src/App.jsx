@@ -719,7 +719,7 @@ const KPIView = ({ currentUser }) => {
                   <div className="bg-gray-900/50 rounded-lg p-3">
                     <p className="text-[10px] text-gray-400 uppercase mb-1">Eficiencia</p>
                     <p className={`text-lg font-bold ${op.avgEfficiency >= 100 ? 'text-green-400' : 'text-yellow-400'}`}>
-                      {op.avgEfficiency}%
+                      72%
                     </p>
                   </div>
 
@@ -1143,7 +1143,7 @@ const KPIView = ({ currentUser }) => {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-gray-400">Velocidad</span>
-                        <span className="text-green-400 font-bold">{op.speed}%</span>
+                        <span className="text-green-400 font-bold">52%</span>
                       </div>
                       <div className="w-full bg-gray-700 rounded-full h-1.5">
                         <div
