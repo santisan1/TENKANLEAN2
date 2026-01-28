@@ -2214,7 +2214,15 @@ const PlantMap = ({ locationStatuses }) => {
     setActiveSector('general');
     setIsInteractive(false); // Al volver al general, reseteamos el zoom
   };
-
+  const handleMapClick = (e) => {
+    // Solo logueamos si la lupa está APAGADA (en vista completa)
+    if (!isInteractive) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      console.log(`📍 Coordenadas para ${activeSector}: x: ${x.toFixed(2)}, y: ${y.toFixed(2)}`);
+    }
+  };
   const toggleInteractive = () => setIsInteractive(!isInteractive);
 
   return (
