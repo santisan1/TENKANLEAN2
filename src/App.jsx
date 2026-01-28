@@ -1148,7 +1148,7 @@ const KPIView = ({ currentUser }) => {
                       <div className="w-full bg-gray-700 rounded-full h-1.5">
                         <div
                           className="bg-green-500 h-1.5 rounded-full"
-                          style={{ width: `${op.speed}%` }}
+                          style={{ width: `52%` }}
                         ></div>
                       </div>
 
