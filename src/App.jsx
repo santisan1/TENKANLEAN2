@@ -2178,10 +2178,10 @@ const MAP_DATA = {
     title: 'Vista General de Planta',
     image: '/tu-plano.png',
     pins: [
-      { id: 'Zona 1 - Bobinado', x: 35, y: 24.64, target: 'sectorA' },
-      { id: 'Zona 2 - Prestabilizado', x: 55.18, y: 29.64, target: 'sectorB' },
-      { id: 'Zona 3 - Montaje', x: 56.10, y: 69.22, target: 'sectorC' },
-
+      // CAMBIAMOS EL ID PARA QUE COINCIDA CON FIREBASE
+      { id: 'Zona 1', label: 'Zona 1 - Bobinado', x: 35, y: 24.64, target: 'sectorA' },
+      { id: 'Zona 2', label: 'Zona 2 - Prestabilizado', x: 55.18, y: 29.64, target: 'sectorB' },
+      { id: 'Zona 3', label: 'Zona 3 - Montaje', x: 56.10, y: 69.22, target: 'sectorC' },
     ]
   },
   sectorA: {
