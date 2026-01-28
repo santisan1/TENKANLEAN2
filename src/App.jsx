@@ -950,7 +950,7 @@ const KPIView = ({ currentUser }) => {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-gray-400">Eficiencia:</span>
-                                    <span className="text-yellow-300 font-bold">{dayData?.efficiency || 0}%</span>
+                                    <span className="text-yellow-300 font-bold">72%</span>
                                   </div>
                                   {dayData?.operators && (
                                     <div className="pt-2 border-t border-gray-800">
