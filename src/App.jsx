@@ -992,7 +992,7 @@ const KPIView = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* COLUMNA DERECHA: TENDENCIA SEMANAL + COMPARATIVA DE OPERARIOS */}
+          {/* COLUMNA DERECHA: rMANAL + COMPARATIVA DE OPERARIOS */}
 
         </div>
       </div>
@@ -1556,9 +1556,327 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
     </div>
   );
 };
+// ============ COMPONENTE: BUSCADOR DE MATERIALES ============
+const MaterialSearchView = ({ userRole }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [historicalData, setHistoricalData] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editData, setEditData] = useState({});
 
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) return;
+
+    setLoading(true);
+    setSearchResult(null);
+    setHistoricalData(null);
+
+    try {
+      // Buscar en kanban_cards
+      const cardRef = doc(db, 'kanban_cards', searchTerm.toUpperCase().trim());
+      const cardSnap = await getDoc(cardRef);
+
+      if (!cardSnap.exists()) {
+        setSearchResult({ notFound: true });
+        setLoading(false);
+        return;
+      }
+
+      const cardData = { id: cardSnap.id, ...cardSnap.data() };
+      setSearchResult(cardData);
+
+      // Buscar historial en completed_orders
+      const historyQuery = query(
+        collection(db, 'completed_orders'),
+        where('partNumber', '==', searchTerm.toUpperCase().trim())
+      );
+      const historySnap = await getDocs(historyQuery);
+
+      const totalOrders = historySnap.size;
+      const orders = historySnap.docs.map(d => d.data());
+
+      const avgLeadTime = orders.length > 0
+        ? Math.round(orders.reduce((sum, o) => sum + (o.totalLeadTime || 0), 0) / orders.length)
+        : 0;
+
+      setHistoricalData({
+        totalOrders,
+        avgLeadTime,
+        lastOrderDate: orders.length > 0 && orders[0].deliveredAt
+          ? orders[0].deliveredAt.toDate().toLocaleDateString('es-AR')
+          : 'N/A'
+      });
+
+    } catch (error) {
+      console.error('Error en búsqueda:', error);
+      setSearchResult({ error: true });
+    }
+
+    setLoading(false);
+  };
+
+  const handleEdit = () => {
+    setEditData({
+      stdOpTime: searchResult.stdOpTime || 10,
+      complexityWeight: searchResult.complexityWeight || 1,
+      targetLeadTime: searchResult.targetLeadTime || 30,
+      standardPack: searchResult.standardPack || '1'
+    });
+    setShowEditModal(true);
+  };
+
+  const saveEdit = async () => {
+    try {
+      const cardRef = doc(db, 'kanban_cards', searchResult.id);
+      await updateDoc(cardRef, {
+        stdOpTime: parseInt(editData.stdOpTime),
+        complexityWeight: parseInt(editData.complexityWeight),
+        targetLeadTime: parseInt(editData.targetLeadTime),
+        standardPack: editData.standardPack
+      });
+
+      alert('✅ Datos actualizados correctamente');
+      setShowEditModal(false);
+      handleSearch(); // Recargar datos
+    } catch (error) {
+      console.error('Error al actualizar:', error);
+      alert('❌ Error al guardar cambios');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-white">🔍 Buscador de Materiales</h1>
+        <p className="text-gray-400 mt-1">Consulta información y historial de tarjetas Kanban</p>
+      </div>
+
+      {/* Barra de Búsqueda */}
+      <div className="flex gap-3">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+          placeholder="Ingrese Part Number (ej: 01001260120-0)"
+          className="flex-1 bg-gray-900/50 border-2 border-gray-700 rounded-xl px-6 py-4 text-white text-lg focus:outline-none focus:border-blue-500"
+        />
+        <button
+          onClick={handleSearch}
+          disabled={loading}
+          className="px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-bold rounded-xl transition-all flex items-center gap-2"
+        >
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <Search className="w-5 h-5" />
+          )}
+          Buscar
+        </button>
+      </div>
+
+      {/* Resultados */}
+      {searchResult && (
+        <div className="space-y-6">
+          {searchResult.notFound ? (
+            <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-8 text-center">
+              <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+              <p className="text-xl font-bold text-red-400">Material no encontrado</p>
+              <p className="text-gray-400 mt-2">El Part Number ingresado no existe en el sistema</p>
+            </div>
+          ) : searchResult.error ? (
+            <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-8 text-center">
+              <p className="text-xl font-bold text-red-400">Error en la búsqueda</p>
+            </div>
+          ) : (
+            <>
+              {/* Información del Material */}
+              <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
+                <div className="flex items-start justify-between mb-6">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <Package className="w-8 h-8 text-blue-400" />
+                      <h2 className="text-2xl font-bold text-white">Información del Material</h2>
+                    </div>
+                    <p className="text-sm text-gray-400">Part Number: {searchResult.partNumber}</p>
+                  </div>
+
+                  {/* BOTÓN EDITAR - SOLO ADMIN */}
+                  {userRole === 'ADMIN' && (
+                    <button
+                      onClick={handleEdit}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all flex items-center gap-2"
+                    >
+                      <Settings className="w-4 h-4" />
+                      Editar Parámetros
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Descripción</p>
+                    <p className="text-white font-medium">{searchResult.description}</p>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Ubicación</p>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-blue-400" />
+                      <p className="text-white font-bold">{searchResult.location}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Zona</p>
+                    <p className="text-white font-medium">{searchResult.zona || 'N/A'}</p>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Pack Estándar</p>
+                    <p className="text-white font-bold text-xl">{searchResult.standardPack} unidades</p>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Tiempo Estándar</p>
+                    <p className="text-white font-bold">{searchResult.stdOpTime || 10} min</p>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Complejidad</p>
+                    <div className="flex items-center gap-2">
+                      {Array.from({ length: 5 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`w-3 h-3 rounded-full ${i < (searchResult.complexityWeight || 1)
+                            ? 'bg-orange-500'
+                            : 'bg-gray-700'
+                            }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Lead Time Objetivo</p>
+                    <p className="text-white font-bold">{searchResult.targetLeadTime || 30} min</p>
+                  </div>
+
+                  <div className="bg-gray-800/50 rounded-xl p-4">
+                    <p className="text-xs text-gray-400 uppercase mb-2">Bins Totales</p>
+                    <p className="text-white font-bold">{searchResult.totalBins || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Datos Históricos */}
+              {historicalData && (
+                <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 backdrop-blur-sm rounded-2xl border border-blue-500/30 p-6">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                    <Activity className="w-6 h-6 text-blue-400" />
+                    Historial de Pedidos
+                  </h3>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
+                      <p className="text-sm text-gray-400 mb-2">Total de Pedidos</p>
+                      <p className="text-4xl font-black text-blue-400">{historicalData.totalOrders}</p>
+                    </div>
+
+                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
+                      <p className="text-sm text-gray-400 mb-2">Lead Time Promedio</p>
+                      <p className="text-4xl font-black text-purple-400">{historicalData.avgLeadTime}<span className="text-lg">min</span></p>
+                    </div>
+
+                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
+                      <p className="text-sm text-gray-400 mb-2">Último Pedido</p>
+                      <p className="text-lg font-bold text-green-400">{historicalData.lastOrderDate}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Modal de Edición - SOLO ADMIN */}
+      {showEditModal && userRole === 'ADMIN' && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-gray-900 border-2 border-gray-700 rounded-2xl p-8 w-full max-w-2xl"
+          >
+            <h3 className="text-2xl font-bold text-white mb-6">Editar Parámetros Kanban</h3>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="text-sm text-gray-300 font-medium mb-2 block">Tiempo Estándar (min)</label>
+                <input
+                  type="number"
+                  value={editData.stdOpTime}
+                  onChange={(e) => setEditData({ ...editData, stdOpTime: e.target.value })}
+                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-300 font-medium mb-2 block">Complejidad (1-5)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={editData.complexityWeight}
+                  onChange={(e) => setEditData({ ...editData, complexityWeight: e.target.value })}
+                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-300 font-medium mb-2 block">Lead Time Objetivo (min)</label>
+                <input
+                  type="number"
+                  value={editData.targetLeadTime}
+                  onChange={(e) => setEditData({ ...editData, targetLeadTime: e.target.value })}
+                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-300 font-medium mb-2 block">Pack Estándar</label>
+                <input
+                  type="text"
+                  value={editData.standardPack}
+                  onChange={(e) => setEditData({ ...editData, standardPack: e.target.value })}
+                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={saveEdit}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl"
+              >
+                Guardar Cambios
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl"
+              >
+                Cancelar
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+};
 // ============ SUPPLY CHAIN DASHBOARD (DESKTOP) ============
-const SupplyChainView = ({ currentUser, onLogout }) => {
+const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ pending: 0, inTransit: 0, delivered: 0 });
   const [isConnected, setIsConnected] = useState(false);
@@ -1787,15 +2105,30 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
                 >
                   📋 Pedidos Activos
                 </button>
+
+                {/* 🔥 NUEVA PESTAÑA BUSCADOR */}
                 <button
-                  onClick={() => setActiveTab('kpis')}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'kpis'
+                  onClick={() => setActiveTab('search')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'search'
                     ? 'bg-blue-500 text-white'
                     : 'text-gray-400 hover:text-white hover:bg-gray-800'
                     }`}
                 >
-                  📊 Estadísticas
+                  🔍 Buscador
                 </button>
+
+                {/* 🔥 SOLO MOSTRAR ESTADÍSTICAS SI ES ADMIN */}
+                {userRole === 'ADMIN' && (
+                  <button
+                    onClick={() => setActiveTab('kpis')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'kpis'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      }`}
+                  >
+                    📊 Estadísticas
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1838,8 +2171,10 @@ const SupplyChainView = ({ currentUser, onLogout }) => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === 'kpis' ? (
+        {activeTab === 'kpis' && userRole === 'ADMIN' ? (
           <KPIView currentUser={currentUser} />
+        ) : activeTab === 'search' ? (
+          <MaterialSearchView userRole={userRole} />
         ) : (
           <>
             {/* Stats Overview - CON DATOS REALES */}
@@ -2278,10 +2613,34 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+
+      if (user) {
+        // 🔥 BUSCAR ROL EN FIRESTORE
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+
+          if (userDoc.exists()) {
+            const role = userDoc.data().role || 'MILKMAN';
+            setUserRole(role);
+            console.log('✅ Rol asignado:', role);
+          } else {
+            // Si no existe en la colección, es MILKMAN por defecto
+            setUserRole('MILKMAN');
+            console.log('⚠️ Usuario sin documento en Firestore, rol: MILKMAN');
+          }
+        } catch (error) {
+          console.error('❌ Error al obtener rol:', error);
+          setUserRole('MILKMAN'); // Por defecto MILKMAN en caso de error
+        }
+      } else {
+        setUserRole(null);
+      }
+
       setLoading(false);
     });
     return () => unsubscribe();
@@ -2320,6 +2679,5 @@ export default function App() {
   if (!currentUser) {
     return <LoginScreen onLoginSuccess={() => setShowLogin(false)} />;
   }
-
-  return <SupplyChainView currentUser={currentUser} onLogout={handleLogout} />;
+  return <SupplyChainView currentUser={currentUser} userRole={userRole} onLogout={handleLogout} />;
 }
