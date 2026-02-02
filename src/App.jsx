@@ -1557,6 +1557,7 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
   );
 };
 // ============ COMPONENTE: BUSCADOR DE MATERIALES ============
+// ============ COMPONENTE: BUSCADOR DE MATERIALES MEJORADO ============
 const MaterialSearchView = ({ userRole }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResult, setSearchResult] = useState(null);
@@ -1565,16 +1566,91 @@ const MaterialSearchView = ({ userRole }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState({});
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) return;
+  // 🔥 NUEVOS ESTADOS
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [allMaterials, setAllMaterials] = useState([]);
+
+  // 🔥 CARGAR TODOS LOS MATERIALES AL INICIAR
+  useEffect(() => {
+    const loadAllMaterials = async () => {
+      try {
+        const materialsSnap = await getDocs(collection(db, 'kanban_cards'));
+        const materials = materialsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setAllMaterials(materials);
+
+        // Cargar búsquedas recientes de localStorage
+        const saved = localStorage.getItem('recentSearches');
+        if (saved) {
+          setRecentSearches(JSON.parse(saved));
+        }
+      } catch (error) {
+        console.error('Error cargando materiales:', error);
+      }
+    };
+    loadAllMaterials();
+  }, []);
+
+  // 🔥 BÚSQUEDA INTELIGENTE CON SUGERENCIAS
+  const handleInputChange = (value) => {
+    setSearchTerm(value);
+
+    if (value.trim().length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    // Buscar coincidencias en Part Number O Descripción
+    const matches = allMaterials.filter(mat => {
+      const searchLower = value.toLowerCase();
+      const partMatch = mat.partNumber?.toLowerCase().includes(searchLower);
+      const descMatch = mat.description?.toLowerCase().includes(searchLower);
+      return partMatch || descMatch;
+    }).slice(0, 8); // Máximo 8 sugerencias
+
+    setSuggestions(matches);
+    setShowSuggestions(matches.length > 0);
+  };
+
+  // 🔥 SELECCIONAR SUGERENCIA
+  const selectSuggestion = (material) => {
+    setSearchTerm(material.partNumber);
+    setShowSuggestions(false);
+    handleSearch(material.partNumber);
+  };
+
+  // 🔥 GUARDAR EN BÚSQUEDAS RECIENTES
+  const saveToRecent = (partNumber, description) => {
+    const newSearch = {
+      partNumber,
+      description,
+      timestamp: Date.now()
+    };
+
+    const updated = [
+      newSearch,
+      ...recentSearches.filter(s => s.partNumber !== partNumber)
+    ].slice(0, 5); // Máximo 5 búsquedas recientes
+
+    setRecentSearches(updated);
+    localStorage.setItem('recentSearches', JSON.stringify(updated));
+  };
+
+  const handleSearch = async (searchValue = searchTerm) => {
+    if (!searchValue.trim()) return;
 
     setLoading(true);
     setSearchResult(null);
     setHistoricalData(null);
+    setShowSuggestions(false);
 
     try {
-      // Buscar en kanban_cards
-      const cardRef = doc(db, 'kanban_cards', searchTerm.toUpperCase().trim());
+      const cardRef = doc(db, 'kanban_cards', searchValue.toUpperCase().trim());
       const cardSnap = await getDoc(cardRef);
 
       if (!cardSnap.exists()) {
@@ -1586,10 +1662,13 @@ const MaterialSearchView = ({ userRole }) => {
       const cardData = { id: cardSnap.id, ...cardSnap.data() };
       setSearchResult(cardData);
 
-      // Buscar historial en completed_orders
+      // 🔥 GUARDAR EN RECIENTES
+      saveToRecent(cardData.partNumber, cardData.description);
+
+      // Buscar historial
       const historyQuery = query(
         collection(db, 'completed_orders'),
-        where('partNumber', '==', searchTerm.toUpperCase().trim())
+        where('partNumber', '==', searchValue.toUpperCase().trim())
       );
       const historySnap = await getDocs(historyQuery);
 
@@ -1638,7 +1717,7 @@ const MaterialSearchView = ({ userRole }) => {
 
       alert('✅ Datos actualizados correctamente');
       setShowEditModal(false);
-      handleSearch(); // Recargar datos
+      handleSearch(searchResult.partNumber);
     } catch (error) {
       console.error('Error al actualizar:', error);
       alert('❌ Error al guardar cambios');
@@ -1649,34 +1728,132 @@ const MaterialSearchView = ({ userRole }) => {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-white">🔍 Buscador de Materiales</h1>
-        <p className="text-gray-400 mt-1">Consulta información y historial de tarjetas Kanban</p>
+        <p className="text-gray-400 mt-1">Busca por Part Number o Descripción</p>
       </div>
 
-      {/* Barra de Búsqueda */}
-      <div className="flex gap-3">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="Ingrese Part Number (ej: 01001260120-0)"
-          className="flex-1 bg-gray-900/50 border-2 border-gray-700 rounded-xl px-6 py-4 text-white text-lg focus:outline-none focus:border-blue-500"
-        />
-        <button
-          onClick={handleSearch}
-          disabled={loading}
-          className="px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-bold rounded-xl transition-all flex items-center gap-2"
+      {/* Barra de Búsqueda Mejorada */}
+      <div className="relative">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+              onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
+              placeholder="Ej: 01001260120-0 o 'papel creppe'"
+              className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-6 py-4 text-white text-lg focus:outline-none focus:border-blue-500 pr-12"
+            />
+
+            {/* Icono de búsqueda dentro del input */}
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+
+            {/* 🔥 SUGERENCIAS DESPLEGABLES */}
+            {showSuggestions && suggestions.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border-2 border-gray-700 rounded-xl shadow-2xl z-50 max-h-80 overflow-y-auto"
+              >
+                {suggestions.map((mat, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => selectSuggestion(mat)}
+                    className="w-full text-left px-6 py-4 hover:bg-gray-800 transition-colors border-b border-gray-800 last:border-0"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Package className="w-5 h-5 text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono font-bold text-white text-sm truncate">
+                          {mat.partNumber}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {mat.description}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <MapPin className="w-3 h-3 text-purple-400" />
+                          <span className="text-xs text-purple-300">{mat.location}</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs text-gray-500">Pack</p>
+                        <p className="text-sm font-bold text-green-400">{mat.standardPack}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </div>
+
+          <button
+            onClick={() => handleSearch()}
+            disabled={loading}
+            className="px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg hover:shadow-blue-500/20"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <Search className="w-5 h-5" />
+            )}
+            Buscar
+          </button>
+        </div>
+      </div>
+
+      {/* 🔥 BÚSQUEDAS RECIENTES */}
+      {!searchResult && recentSearches.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gray-900/30 rounded-2xl border border-gray-800 p-6"
         >
-          {loading ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <Search className="w-5 h-5" />
-          )}
-          Buscar
-        </button>
-      </div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-gray-400" />
+              Búsquedas Recientes
+            </h3>
+            <button
+              onClick={() => {
+                setRecentSearches([]);
+                localStorage.removeItem('recentSearches');
+              }}
+              className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+            >
+              Limpiar
+            </button>
+          </div>
 
-      {/* Resultados */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {recentSearches.map((recent, idx) => (
+              <motion.button
+                key={idx}
+                whileHover={{ scale: 1.02 }}
+                onClick={() => handleSearch(recent.partNumber)}
+                className="bg-gray-800/50 hover:bg-gray-800 rounded-xl p-4 text-left transition-all border border-gray-700 hover:border-blue-500/30"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Package className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-bold text-white text-xs truncate">
+                      {recent.partNumber}
+                    </p>
+                    <p className="text-xs text-gray-400 truncate mt-1">
+                      {recent.description}
+                    </p>
+                  </div>
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Resultados - IGUAL QUE ANTES */}
       {searchResult && (
         <div className="space-y-6">
           {searchResult.notFound ? (
