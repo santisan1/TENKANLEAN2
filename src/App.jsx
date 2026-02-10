@@ -2595,7 +2595,7 @@ const PlantMap = ({ locationStatuses }) => {
                   {/* Tooltip visible solo al pasar el mouse */}
                   <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur px-2 py-1 rounded border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     <p className="text-[10px] font-black text-white whitespace-nowrap uppercase">
-                      {pin.id} {pin.target ? '🔍' : ''}
+                      {pin.label} {pin.target ? '🔍' : ''}
                     </p>
                   </div>
                 </div>
