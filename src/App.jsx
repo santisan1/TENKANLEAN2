@@ -2574,9 +2574,10 @@ const PlantMap = ({ locationStatuses }) => {
                     transform: 'translate(-50%, -50%)'
                   }}
                 >
-                  {/* pin visual */}
+                  <div className="w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-lg" />
                 </div>
               ))}
+
             </div>
           </motion.div>
         </div>
