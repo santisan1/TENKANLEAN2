@@ -203,8 +203,6 @@ const checkExistingOrder = async (cardId) => {
 
     if (!querySnapshot.empty) {
       const existingOrder = querySnapshot.docs[0].data();
-      console.log('⚠️ PEDIDO DUPLICADO DETECTADO:', existingOrder);
-
       return {
         exists: true,
         orderId: querySnapshot.docs[0].id,
@@ -216,14 +214,16 @@ const checkExistingOrder = async (cardId) => {
       };
     }
 
-    console.log('✅ No hay pedidos duplicados, puede crear nuevo');
-    return { exists: 'unknown', error: error.message };
+    // ✅ NO hay pedidos activos
+    return { exists: false };
 
 
-  } catch (error) {
-    console.error('❌ Error checking existing order:', error);
-    return { exists: false, error: error.message };
   }
+  catch (error) {
+    console.error('❌ Error checking existing order:', error);
+    return { exists: 'unknown', error: error.message };
+  }
+
 };
 
 // ============ COMPONENTE: VISTA DE KPIs ============
@@ -1274,14 +1274,7 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
         }
 
         // ✅ SOLO ACÁ se crea pedido
-        await addDoc(collection(db, 'active_orders'), {
-          cardId: scannedId,
-          ...card,
-          status: 'PENDING',
-          requestedBy: 'Produccion',
-          timestamp: serverTimestamp(),
-          createdAt: serverTimestamp()
-        });
+
 
         // Crear nuevo pedido
         // En handleScan -> Caso A (Producción)
