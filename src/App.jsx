@@ -2537,50 +2537,88 @@ const PlantMap = ({ locationStatuses }) => {
         </button>
 
         {/* LIENZO DEL MAPA */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <motion.div
-            drag={isInteractive}
-            dragConstraints={{ left: -800, right: 800, top: -500, bottom: 500 }}
-            animate={{
-              scale: isInteractive ? 2 : 1,
-              x: isInteractive ? -300 : 0,
-              y: isInteractive ? -200 : 0
-            }}
-            transition={{ type: "spring", damping: 25, stiffness: 120 }}
-            className="relative origin-top-left"
-            style={{
-              width: '100%',
-              height: '100%',
-              maxWidth: '100%',
-              maxHeight: '100%'
-            }}
-          >
-            {/* CONTENEDOR REAL DE LA IMAGEN */}
-            <div className="relative w-full h-full">
-              <img
-                src={currentConfig.image}
-                alt="Plano"
-                className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
-              />
+        {/* LIENZO DEL MAPA */}
+        <motion.div
+          drag={isInteractive}
+          dragConstraints={{ left: -1000, right: 0, top: -600, bottom: 0 }}
+          animate={{
+            scale: isInteractive ? 2 : 1,
+            x: isInteractive ? -300 : 0,
+            y: isInteractive ? -200 : 0
+          }}
+          transition={{ type: "spring", damping: 25, stiffness: 120 }}
+          className={`relative origin-top-left ${isInteractive
+            ? 'cursor-grab active:cursor-grabbing'
+            : 'cursor-default flex items-center justify-center'
+            }`}
+          style={{ width: '100%', height: '100%' }}
+        >
+          {/* IMAGEN */}
+          <img
+            src={currentConfig.image}
+            alt="Plano"
+            className={`absolute inset-0 w-full h-full ${isInteractive
+              ? 'object-cover opacity-60'
+              : 'object-contain opacity-100'
+              } select-none pointer-events-none`}
+          />
 
-              {/* PINS */}
-              {currentConfig.pins.map((pin) => (
-                <div
-                  key={pin.id}
-                  className="absolute z-20"
-                  style={{
-                    left: `${pin.x}%`,
-                    top: `${pin.y}%`,
-                    transform: 'translate(-50%, -50%)'
-                  }}
-                >
-                  <div className="w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-lg" />
+          {/* PINS */}
+          {currentConfig.pins.map((pin) => {
+            const status = locationStatuses[pin.id];
+            let color = 'bg-gray-500';
+            let shouldPulse = false;
+
+            if (status?.pending) {
+              color = 'bg-red-500';
+              shouldPulse = true;
+            } else if (status?.inTransit) {
+              color = 'bg-yellow-500';
+              shouldPulse = true;
+            }
+
+            return (
+              <motion.div
+                key={pin.id}
+                className="absolute z-20"
+                style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                whileHover={{ scale: 1.3 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (pin.target) {
+                    setActiveSector(pin.target);
+                    setIsInteractive(false); // reset zoom al cambiar de sector
+                  }
+                }}
+              >
+                <div className="relative -translate-x-1/2 -translate-y-1/2 cursor-pointer group">
+                  {shouldPulse && (
+                    <motion.div
+                      className={`absolute inset-0 ${color} rounded-full`}
+                      animate={{ scale: [1, 2.5], opacity: [0.5, 0] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                  )}
+
+                  <div
+                    className={`relative z-10 ${isInteractive ? 'w-6 h-6' : 'w-4 h-4'
+                      } ${color} rounded-full border-2 border-white shadow-lg flex items-center justify-center transition-all`}
+                  >
+                    <div className="w-1 h-1 bg-white rounded-full"></div>
+                  </div>
+
+                  {/* Tooltip */}
+                  <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur px-2 py-1 rounded border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <p className="text-[10px] font-black text-white whitespace-nowrap uppercase">
+                      {pin.label} {pin.target ? '🔍' : ''}
+                    </p>
+                  </div>
                 </div>
-              ))}
+              </motion.div>
+            );
+          })}
+        </motion.div>
 
-            </div>
-          </motion.div>
-        </div>
 
 
         {!isInteractive && (
@@ -2592,7 +2630,7 @@ const PlantMap = ({ locationStatuses }) => {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 };
 // Component: Stat Card
