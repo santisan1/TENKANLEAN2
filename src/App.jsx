@@ -2580,14 +2580,16 @@ const PlantMap = ({ locationStatuses }) => {
 
                 return (
                   <motion.div
+
                     key={pin.id}
                     className="absolute z-20"
                     style={{
                       left: `${pin.x}%`,
-                      top: `${pin.y}%`,
-                      transform: 'translate(-50%, -50%)'
+                      top: `${pin.y}%`
                     }}
                     whileHover={{ scale: 1.3 }}
+
+
                     onClick={(e) => {
                       e.stopPropagation();
                       if (pin.target) {
@@ -2596,7 +2598,8 @@ const PlantMap = ({ locationStatuses }) => {
                       }
                     }}
                   >
-                    <div className="relative cursor-pointer group">
+                    <div className="-translate-x-1/2 -translate-y-1/2 relative cursor-pointer group">
+
                       {shouldPulse && (
                         <motion.div
                           className={`absolute inset-0 ${color} rounded-full`}
@@ -2614,7 +2617,8 @@ const PlantMap = ({ locationStatuses }) => {
 
                       <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur px-2 py-1 rounded border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <p className="text-[10px] font-black text-white whitespace-nowrap uppercase">
-                          {pin.label} {pin.target ? '🔍' : ''}
+                          {pin.label || pin.id} {pin.target ? '🔍' : ''}
+
                         </p>
                       </div>
                     </div>
