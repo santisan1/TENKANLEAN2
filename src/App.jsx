@@ -1213,7 +1213,7 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
   };
 
   const handleScan = async (scannedId) => {
-    if (!scannedId) return;
+    if (!scannedId || scanning) return;
 
     setScanning(true);
     setFeedback(null);
@@ -1260,15 +1260,36 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
         }
 
         // 🔥 Si NO pude verificar → NO crear
+        // 🔥 Estado desconocido → abortar
         if (existingOrder.exists === 'unknown') {
           setFeedback({
             type: 'error',
             message: '⚠️ NO SE PUDO VALIDAR EL ESTADO\nEspere unos segundos y reintente'
           });
+          setScanning(false);
+          return;
+        }
+
+        // ✅ Estado VALIDADO: no existe pedido → crear
+        if (existingOrder.exists === false) {
+          await addDoc(collection(db, 'active_orders'), {
+            cardId: scannedId,
+            ...card,
+            status: 'PENDING',
+            requestedBy: 'Produccion',
+            createdAt: serverTimestamp(),
+            timestamp: serverTimestamp()
+          });
+
+          setFeedback({
+            type: 'success',
+            message: `✓ PEDIDO CREADO\n📍 ${card.location}\n📦 ${card.partNumber}\n⏱️ El almacén será notificado`
+          });
 
           setScanning(false);
           return;
         }
+
 
         // ✅ SOLO ACÁ se crea pedido
 
