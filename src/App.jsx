@@ -217,7 +217,8 @@ const checkExistingOrder = async (cardId) => {
     }
 
     console.log('✅ No hay pedidos duplicados, puede crear nuevo');
-    return { exists: false };
+    return { exists: 'unknown', error: error.message };
+
 
   } catch (error) {
     console.error('❌ Error checking existing order:', error);
@@ -1243,29 +1244,44 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
       // ========== CASO A: SIN LOGIN (PRODUCCIÓN) ==========
       if (!currentUser) {
         // Si ya hay pedido activo
-        if (existingOrder.exists) {
-          const minutosEspera = Math.floor((Date.now() - existingOrder.timestamp.toMillis()) / 60000);
-
-          setExistingOrderInfo({
-            orderId: existingOrder.orderId,
-            status: existingOrder.status,
-            timestamp: existingOrder.timestamp,
-            location: existingOrder.location,
-            partNumber: existingOrder.partNumber,
-            takenBy: existingOrder.takenBy || 'Sin asignar'
-          });
-
-          const estadoTexto = existingOrder.status === 'PENDING'
-            ? `⏳ PENDIENTE de retiro`
-            : `🚚 EN CAMINO con ${existingOrder.takenBy || 'almacén'}`;
+        // 🔥 Si hay pedido activo → NO crear
+        if (existingOrder.exists === true) {
+          const minutosEspera = Math.floor(
+            (Date.now() - existingOrder.timestamp.toMillis()) / 60000
+          );
 
           setFeedback({
             type: 'info',
-            message: `ℹ️ MATERIAL EN PROCESO\n${estadoTexto}\n⏱️ Esperando hace ${minutosEspera} min.\n📍 ${card.location}`
+            message:
+              existingOrder.status === 'PENDING'
+                ? `ℹ️ MATERIAL YA SOLICITADO\n⏳ Pendiente de retiro\n📍 ${existingOrder.location}\n⏱️ ${minutosEspera} min`
+                : `ℹ️ MATERIAL EN CAMINO\n🚚 Retirado por almacén\n📍 ${existingOrder.location}`
           });
+
           setScanning(false);
           return;
         }
+
+        // 🔥 Si NO pude verificar → NO crear
+        if (existingOrder.exists === 'unknown') {
+          setFeedback({
+            type: 'error',
+            message: '⚠️ NO SE PUDO VALIDAR EL ESTADO\nEspere unos segundos y reintente'
+          });
+
+          setScanning(false);
+          return;
+        }
+
+        // ✅ SOLO ACÁ se crea pedido
+        await addDoc(collection(db, 'active_orders'), {
+          cardId: scannedId,
+          ...card,
+          status: 'PENDING',
+          requestedBy: 'Produccion',
+          timestamp: serverTimestamp(),
+          createdAt: serverTimestamp()
+        });
 
         // Crear nuevo pedido
         // En handleScan -> Caso A (Producción)
