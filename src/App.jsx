@@ -2556,11 +2556,11 @@ const PlantMap = ({ locationStatuses }) => {
           {/* IMAGEN */}
           {/* WRAPPER DE IMAGEN REAL */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative">
+            <div className="relative w-full h-full">
               <img
                 src={currentConfig.image}
                 alt="Plano"
-                className={`block max-w-full max-h-full ${isInteractive ? 'opacity-60' : 'opacity-100'
+                className={`block w-full h-full object-contain ${isInteractive ? 'opacity-60' : 'opacity-100'
                   } select-none pointer-events-none`}
               />
 
