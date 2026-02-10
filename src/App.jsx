@@ -1401,8 +1401,12 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
       }
 
     } catch (error) {
-      console.error('Error:', error);
-      setFeedback({ type: 'error', message: '✗ ERROR DE CONEXIÓN\nReintente.' });
+      console.error('❌ Error real:', error);
+
+      setFeedback({
+        type: 'error',
+        message: `✗ ERROR\n${error.code || ''}\n${error.message || 'Error desconocido'}`
+      });
     }
 
     setScanning(false);
