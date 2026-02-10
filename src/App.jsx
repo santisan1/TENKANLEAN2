@@ -189,42 +189,39 @@ const LoginScreen = ({ onLoginSuccess }) => {
 // Function to check for existing active orders
 const checkExistingOrder = async (cardId) => {
   try {
-    console.log('🔍 Buscando pedidos activos para:', cardId);
-
     const q = query(
       collection(db, 'active_orders'),
-      where('cardId', '==', cardId),
-      where('status', 'in', ['PENDING', 'IN_TRANSIT'])
+      where('cardId', '==', cardId)
     );
 
-    const querySnapshot = await getDocs(q);
+    const snapshot = await getDocs(q);
 
-    console.log('📊 Documentos encontrados:', querySnapshot.size);
-
-    if (!querySnapshot.empty) {
-      const existingOrder = querySnapshot.docs[0].data();
-      return {
-        exists: true,
-        orderId: querySnapshot.docs[0].id,
-        status: existingOrder.status,
-        timestamp: existingOrder.timestamp,
-        location: existingOrder.location,
-        partNumber: existingOrder.partNumber,
-        takenBy: existingOrder.takenBy || 'Sin asignar'
-      };
+    if (snapshot.empty) {
+      return { exists: false };
     }
 
-    // ✅ NO hay pedidos activos
-    return { exists: false };
+    const active = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .find(o => o.status === 'PENDING' || o.status === 'IN_TRANSIT');
 
+    if (!active) return { exists: false };
 
-  }
-  catch (error) {
+    return {
+      exists: true,
+      orderId: active.id,
+      status: active.status,
+      timestamp: active.timestamp,
+      location: active.location,
+      partNumber: active.partNumber,
+      takenBy: active.takenBy || 'Sin asignar'
+    };
+
+  } catch (error) {
     console.error('❌ Error checking existing order:', error);
     return { exists: 'unknown', error: error.message };
   }
-
 };
+
 
 // ============ COMPONENTE: VISTA DE KPIs ============
 // ============ COMPONENTE: VISTA DE KPIs MEJORADA ============
