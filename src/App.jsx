@@ -2541,11 +2541,11 @@ const PlantMap = ({ locationStatuses }) => {
           drag={isInteractive} // Solo se puede arrastrar si tocaste la lupa
           dragConstraints={{ left: -1000, right: 0, top: -600, bottom: 0 }}
           animate={{
-            width: isInteractive ? '2000px' : '100%',
-            height: isInteractive ? '1200px' : '100%',
+            scale: isInteractive ? 2 : 1,
             x: isInteractive ? -300 : 0,
             y: isInteractive ? -200 : 0
           }}
+
           transition={{ type: "spring", damping: 25, stiffness: 120 }}
           className={`relative origin-top-left ${isInteractive ? 'cursor-grab active:cursor-grabbing' : 'cursor-default flex items-center justify-center'}`}
         >
@@ -2553,7 +2553,7 @@ const PlantMap = ({ locationStatuses }) => {
             src={currentConfig.image}
             alt="Plano"
             className={`transition-all duration-500 ${isInteractive
-              ? 'absolute inset-0 w-full h-full object-cover opacity-60'
+              ? 'absolute inset-0 w-full h-full object-contain opacity-60'
               : 'max-w-full max-h-full object-contain opacity-100'
               } select-none pointer-events-none`}
           />
