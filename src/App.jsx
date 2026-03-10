@@ -61,6 +61,40 @@ const buildOrderPayloadFromCard = (card = {}, cardId = '') => ({
   totalBins: card.totalBins || 0
 });
 
+const normalizeMapKey = (value = '') => value.toString().trim().toUpperCase();
+
+const getSafeDate = (value) => {
+  if (!value) return null;
+  if (value?.toDate) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value?.seconds === 'number') return new Date(value.seconds * 1000);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getZoneCodeFromOrder = (order = {}) => {
+  const direct = normalizeMapKey(order.zoneCode || '');
+  if (direct) return direct;
+
+  const cardZone = (order.cardId || '').split('__')[1];
+  if (cardZone) return normalizeMapKey(cardZone);
+
+  const zoneMatch = (order.zona || '').match(/zona\s*(\d+)/i);
+  if (zoneMatch?.[1]) return `Z${zoneMatch[1].padStart(2, '0')}`;
+
+  return '';
+};
+
+const getRackCodeFromOrder = (order = {}) => {
+  const direct = normalizeMapKey(order.rackCode || '');
+  if (direct) return direct;
+
+  const cardRack = (order.cardId || '').split('__')[2];
+  if (cardRack) return normalizeMapKey(cardRack);
+
+  return '';
+};
+
 // ============ UTILIDAD PARA CALCULAR MÉTRICAS DE PEDIDO ============
 const calculateOrderMetrics = (orderData, deliveredAt = new Date()) => {
   // Asegurarnos de que tenemos los timestamps esenciales
@@ -295,12 +329,12 @@ const KPIView = ({ currentUser }) => {
     });
 
     if (alerts.length === 0) {
-      const highestLT = Math.max(...heatmapData.map(h => h.leadTime));
-      const criticalHour = heatmapData.find(h => h.leadTime === highestLT);
+      const highestLT = heatmapData.length > 0 ? Math.max(...heatmapData.map(h => h.leadTime || 0)) : 0;
+      const criticalHour = heatmapData.find(h => (h.leadTime || 0) === highestLT);
 
       alerts.push({
         type: 'info',
-        title: highestLT > 0 ? `Pico de ${highestLT}min el ${dayNames[criticalHour.day]} a las ${criticalHour.hour}:00` : 'Sin alertas críticas',
+        title: highestLT > 0 && criticalHour ? `Pico de ${highestLT}min el ${dayNames[criticalHour.day]} a las ${criticalHour.hour}:00` : 'Sin alertas críticas',
         message: highestLT > 0 ? 'Hora con mayor lead time registrado' : 'Todos los tiempos dentro del objetivo',
         time: 'Análisis',
         location: 'Todas las áreas',
@@ -324,8 +358,9 @@ const KPIView = ({ currentUser }) => {
       peakHours: (() => {
         const hourCounts = {};
         kpiData.orders.filter(o => o.deliveredBy === op.name).forEach(order => {
-          if (order.timestamp) {
-            const hour = order.timestamp.toDate().getHours();
+          const orderDate = getSafeDate(order.timestamp);
+          if (orderDate) {
+            const hour = orderDate.getHours();
             hourCounts[hour] = (hourCounts[hour] || 0) + 1;
           }
         });
@@ -335,7 +370,7 @@ const KPIView = ({ currentUser }) => {
           .map(([hour]) => parseInt(hour));
       })()
     }));
-  }, [kpiData.operatorRanking]);
+  }, [kpiData.operatorRanking, kpiData.orders]);
   useEffect(() => {
     const fetchKPIs = async () => {
       try {
@@ -361,14 +396,56 @@ const KPIView = ({ currentUser }) => {
 
         const deliveredQuery = query(
           collection(db, 'completed_orders'),
-          where('status', '==', 'DELIVERED'),
-          where('deliveredAt', '>=', startDate)
+          where('status', '==', 'DELIVERED')
         );
 
         const snapshot = await getDocs(deliveredQuery);
-        const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const orders = allOrders.filter((order) => {
+          const deliveredDate = getSafeDate(order.deliveredAt) || getSafeDate(order.timestamp);
+          if (!deliveredDate) return false;
+          return deliveredDate >= startDate;
+        });
+
+        const allDeliveredDates = allOrders
+          .map((o) => getSafeDate(o.deliveredAt) || getSafeDate(o.timestamp))
+          .filter(Boolean)
+          .sort((a, b) => a.getTime() - b.getTime());
+
+        console.log('📊 KPI debug', {
+          timeRange,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          nowISO: now.toISOString(),
+          startDateISO: startDate.toISOString(),
+          completedFetched: allOrders.length,
+          completedInRange: orders.length,
+          minDeliveredAtISO: allDeliveredDates[0]?.toISOString() || null,
+          maxDeliveredAtISO: allDeliveredDates[allDeliveredDates.length - 1]?.toISOString() || null,
+          sampleDeliveredAt: allOrders.slice(0, 5).map(o => ({
+            id: o.id,
+            deliveredAtISO: (getSafeDate(o.deliveredAt) || null)?.toISOString?.() || null,
+            timestampISO: (getSafeDate(o.timestamp) || null)?.toISOString?.() || null
+          }))
+        });
 
         if (orders.length === 0) {
+          setHeatmapData([]);
+          setKpiData(prev => ({
+            ...prev,
+            overallLeadTime: 0,
+            slaSuccessRate: 0,
+            deliveriesToday: 0,
+            criticalDeliveries: 0,
+            operatorRanking: [],
+            avgReactionTime: 0,
+            avgExecutionTime: 0,
+            topMaterials: [],
+            problemMaterials: [],
+            hourlyHeatmap: [],
+            suspiciousRate: 0,
+            hourlyLeadTimes: [],
+            orders: []
+          }));
           setLoading(false);
           return;
         }
@@ -435,7 +512,8 @@ const KPIView = ({ currentUser }) => {
         const hourlyAnalysis = {};
         orders.forEach(order => {
           if (order.timestamp) {
-            const date = order.timestamp.toDate();
+            const date = getSafeDate(order.timestamp);
+            if (!date) return;
             const day = date.getDay(); // 0=domingo, 1=lunes...
             const hour = date.getHours();
             const key = `${day}-${hour}`;
@@ -526,7 +604,9 @@ const KPIView = ({ currentUser }) => {
 
         orders.forEach(o => {
           if (o.timestamp) {
-            const hour = o.timestamp.toDate().getHours();
+            const tsDate = getSafeDate(o.timestamp);
+            if (!tsDate) return;
+            const hour = tsDate.getHours();
             hourlyCreationMap[hour].count++;
             hourlyCreationMap[hour].totalTime += (o.totalLeadTime || 0);
           }
@@ -2089,24 +2169,46 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
 
   // Lógica para que titile tanto la Zona como el Rack específico
   const locationStatuses = orders.reduce((acc, order) => {
-    const z = order.zona;     // Ej: "Zona 1"
-    const l = order.location; // Ej: "Rack A-01"
+    const zoneKey = getZoneCodeFromOrder(order);
+    const rackKey = getRackCodeFromOrder(order);
 
-    // Marcar la Zona (para el mapa general)
-    if (z) {
-      if (!acc[z]) acc[z] = { pending: false, inTransit: false };
-      if (order.status === 'PENDING') acc[z].pending = true;
-      if (order.status === 'IN_TRANSIT') acc[z].inTransit = true;
+    const keys = [zoneKey];
+    if (zoneKey && rackKey) {
+      keys.push(`RACK:${zoneKey}__${rackKey}`);
+    } else if (rackKey) {
+      // Fallback legacy si no viene zona en el pedido
+      keys.push(`RACK:${rackKey}`);
     }
 
-    // Marcar el Rack (para el mapa de detalle)
-    if (l) {
-      if (!acc[l]) acc[l] = { pending: false, inTransit: false };
-      if (order.status === 'PENDING') acc[l].pending = true;
-      if (order.status === 'IN_TRANSIT') acc[l].inTransit = true;
-    }
+    keys.filter(Boolean).forEach((key) => {
+      if (!acc[key]) acc[key] = { pending: false, inTransit: false };
+      if (order.status === 'PENDING') acc[key].pending = true;
+      if (order.status === 'IN_TRANSIT') acc[key].inTransit = true;
+    });
+
     return acc;
   }, {});
+
+  useEffect(() => {
+    const debugOrders = orders.slice(0, 8).map(o => ({
+      cardId: o.cardId,
+      status: o.status,
+      zoneCode: o.zoneCode,
+      zona: o.zona,
+      rackCode: o.rackCode,
+      zoneKey: getZoneCodeFromOrder(o),
+      rackKey: getRackCodeFromOrder(o),
+      rackCompositeKey: getZoneCodeFromOrder(o) && getRackCodeFromOrder(o)
+        ? `RACK:${getZoneCodeFromOrder(o)}__${getRackCodeFromOrder(o)}`
+        : null
+    }));
+
+    console.log('🗺️ Map debug', {
+      activeOrders: orders.length,
+      statusKeys: Object.keys(locationStatuses),
+      sampleOrders: debugOrders
+    });
+  }, [orders, locationStatuses]);
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Top Navigation Bar */}
@@ -2258,27 +2360,30 @@ const MAP_DATA = {
     image: '/tu-plano.png',
     pins: [
       // CAMBIAMOS EL ID PARA QUE COINCIDA CON FIREBASE
-      { id: 'Zona 1', label: 'Zona 1 - Bobinado', x: 60, y: 50, target: 'sectorA' },
-      { id: 'Zona 2', label: 'Zona 2 - Prestabilizado', x: 51.45, y: 29.27, target: 'sectorB' },
-      { id: 'Zona 3', label: 'Zona 3 - Montaje', x: 46.94, y: 44.00, target: 'sectorC' },
+      { id: 'Z01', label: 'Zona 1 - Bobinado', x: 60, y: 50, target: 'sectorA' },
+      { id: 'Z02', label: 'Zona 2 - Prestabilizado', x: 51.45, y: 29.27, target: 'sectorB' },
+      { id: 'Z03', label: 'Zona 3 - Montaje', x: 46.94, y: 44.00, target: 'sectorC' },
+      { id: 'Z04', label: 'Zona 4 - Conexionado', x: 41.5, y: 60.0 },
     ]
   },
   sectorA: {
+    zoneCode: 'Z01',
     title: 'Detalle: Sector Estantería A',
     image: '/tu-plano_bob.png',
     pins: [
-      { id: 'Rack A-01', x: 36.72, y: 30.73 },
-      { id: 'Rack A-02', x: 54.06, y: 27.82 },
-      { id: 'Rack A-03', x: 56.82, y: 66.11 },
+      { id: 'R01', label: 'Rack 01', x: 36.72, y: 30.73 },
+      { id: 'R02', label: 'Rack 02', x: 54.06, y: 27.82 },
+      { id: 'R03', label: 'Rack 03', x: 56.82, y: 66.11 },
     ]
   },
   sectorB: {
+    zoneCode: 'Z02',
     title: 'Detalle: Sector Estantería  A',
     image: '/tu-plano_bob.png',
     pins: [
-      { id: 'Rack A-01', x: 20, y: 30 },
-      { id: 'Rack A-02', x: 54.06, y: 27.82 },
-      { id: 'Rack A-03', x: 60, y: 30 },
+      { id: 'R01', label: 'Rack 01', x: 20, y: 30 },
+      { id: 'R02', label: 'Rack 02', x: 54.06, y: 27.82 },
+      { id: 'R03', label: 'Rack 03', x: 60, y: 30 },
     ]
   },
   // Podés agregar sectorB, sectorC, etc., siguiendo la misma lógica
@@ -2286,12 +2391,14 @@ const MAP_DATA = {
 
 const PlantMap = ({ locationStatuses }) => {
   const [activeSector, setActiveSector] = useState('general');
+  const [activeZoneCode, setActiveZoneCode] = useState('');
   const [isInteractive, setIsInteractive] = useState(false); // Por defecto: Imagen completa
   const currentConfig = MAP_DATA[activeSector] || MAP_DATA.general;
 
   // Al volver atrás, siempre reseteamos a vista completa
   const goBack = () => {
     setActiveSector('general');
+    setActiveZoneCode('');
     setIsInteractive(false);
   };
 
@@ -2386,7 +2493,14 @@ const PlantMap = ({ locationStatuses }) => {
 
               {/* PINS (AHORA RELATIVOS A LA IMAGEN) */}
               {currentConfig.pins.map((pin) => {
-                const status = locationStatuses[pin.id];
+                const normalizedPinId = normalizeMapKey(pin.id);
+                const zoneForRack = activeZoneCode || currentConfig.zoneCode || '';
+                const rackLookupKey = zoneForRack
+                  ? `RACK:${normalizeMapKey(zoneForRack)}__${normalizedPinId}`
+                  : `RACK:${normalizedPinId}`;
+                const status = activeSector === 'general'
+                  ? locationStatuses[normalizedPinId]
+                  : locationStatuses[rackLookupKey] || locationStatuses[`RACK:${normalizedPinId}`];
                 let color = 'bg-gray-500';
                 let shouldPulse = false;
 
@@ -2414,6 +2528,7 @@ const PlantMap = ({ locationStatuses }) => {
                       e.stopPropagation();
                       if (pin.target) {
                         setActiveSector(pin.target);
+                        setActiveZoneCode(normalizeMapKey(pin.id));
                         setIsInteractive(false);
                       }
                     }}
