@@ -396,12 +396,33 @@ const KPIView = ({ currentUser }) => {
 
         const deliveredQuery = query(
           collection(db, 'completed_orders'),
-          where('status', '==', 'DELIVERED'),
-          where('deliveredAt', '>=', startDate)
+          where('status', '==', 'DELIVERED')
         );
 
         const snapshot = await getDocs(deliveredQuery);
-        const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const orders = allOrders.filter((order) => {
+          const deliveredDate = getSafeDate(order.deliveredAt) || getSafeDate(order.timestamp);
+          if (!deliveredDate) return false;
+          return deliveredDate >= startDate;
+        });
+
+        console.log('📊 KPI debug', {
+          timeRange,
+          startDate: startDate.toISOString(),
+          completedFetched: allOrders.length,
+          completedInRange: orders.length,
+          sample: orders.slice(0, 3).map(o => ({
+            id: o.id,
+            stockKey: o.stockKey,
+            partNumber: o.partNumber,
+            deliveredAt: !!o.deliveredAt,
+            timestamp: !!o.timestamp,
+            zoneCode: o.zoneCode,
+            rackCode: o.rackCode,
+            location: o.location
+          }))
+        });
 
         if (orders.length === 0) {
           setHeatmapData([]);
@@ -2157,6 +2178,24 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
 
     return acc;
   }, {});
+
+  useEffect(() => {
+    const debugOrders = orders.slice(0, 8).map(o => ({
+      cardId: o.cardId,
+      status: o.status,
+      zoneCode: o.zoneCode,
+      zona: o.zona,
+      rackCode: o.rackCode,
+      zoneKey: getZoneCodeFromOrder(o),
+      rackKey: getRackCodeFromOrder(o)
+    }));
+
+    console.log('🗺️ Map debug', {
+      activeOrders: orders.length,
+      statusKeys: Object.keys(locationStatuses),
+      sampleOrders: debugOrders
+    });
+  }, [orders, locationStatuses]);
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Top Navigation Bar */}
@@ -2311,6 +2350,7 @@ const MAP_DATA = {
       { id: 'Z01', label: 'Zona 1 - Bobinado', x: 60, y: 50, target: 'sectorA' },
       { id: 'Z02', label: 'Zona 2 - Prestabilizado', x: 51.45, y: 29.27, target: 'sectorB' },
       { id: 'Z03', label: 'Zona 3 - Montaje', x: 46.94, y: 44.00, target: 'sectorC' },
+      { id: 'Z04', label: 'Zona 4 - Conexionado', x: 41.5, y: 60.0 },
     ]
   },
   sectorA: {
