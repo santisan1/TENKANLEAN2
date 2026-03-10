@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, getDoc, getDocs, addDoc,
-  onSnapshot, updateDoc, doc, query, where, serverTimestamp, deleteDoc
+  onSnapshot, updateDoc, doc, query, where, serverTimestamp, deleteDoc, setDoc
 } from 'firebase/firestore';
 import {
   getAuth, signInWithEmailAndPassword, signOut,
@@ -40,6 +40,26 @@ const formatTime = (timestamp) => {
   if (!timestamp) return '--:--';
   return timestamp.toDate().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 };
+
+const getMaterialDisplayName = (data = {}) => data.stockKey || data.partNumber || 'Desconocido';
+
+const buildOrderPayloadFromCard = (card = {}, cardId = '') => ({
+  cardId,
+  stockKey: card.stockKey || '',
+  partNumber: card.partNumber || '',
+  versionCode: card.versionCode || '',
+  description: card.description || '',
+  typeUnits: card.typeUnits || '',
+  zona: card.zona || '',
+  location: card.location || '',
+  rackCode: card.rackCode || '',
+  zoneCode: card.zoneCode || '',
+  standardPack: card.standardPack || '',
+  complexityWeight: card.complexityWeight || 1,
+  stdOpTime: card.stdOpTime || 10,
+  targetLeadTime: card.targetLeadTime || 30,
+  totalBins: card.totalBins || 0
+});
 
 // ============ UTILIDAD PARA CALCULAR MÉTRICAS DE PEDIDO ============
 const calculateOrderMetrics = (orderData, deliveredAt = new Date()) => {
@@ -460,21 +480,21 @@ const KPIView = ({ currentUser }) => {
         // Top 5 Materiales Más Solicitados
         const materialMap = {};
         orders.forEach(o => {
-          const pn = o.partNumber || 'Desconocido';
-          if (!materialMap[pn]) {
-            materialMap[pn] = {
+          const materialKey = o.stockKey || o.partNumber || 'Desconocido';
+          if (!materialMap[materialKey]) {
+            materialMap[materialKey] = {
               count: 0,
               totalTime: 0,
               description: o.description || ''
             };
           }
-          materialMap[pn].count++;
-          materialMap[pn].totalTime += (o.totalLeadTime || 0);
+          materialMap[materialKey].count++;
+          materialMap[materialKey].totalTime += (o.totalLeadTime || 0);
         });
 
         const topMaterials = Object.entries(materialMap)
-          .map(([pn, data]) => ({
-            partNumber: pn,
+          .map(([materialKey, data]) => ({
+            materialKey,
             description: data.description,
             frequency: data.count,
             avgLeadTime: Math.round(data.totalTime / data.count)
@@ -485,8 +505,8 @@ const KPIView = ({ currentUser }) => {
         // Materiales Problemáticos (alto Lead Time)
         const problemMaterials = Object.entries(materialMap)
           .filter(([_, data]) => data.count >= 2)
-          .map(([pn, data]) => ({
-            partNumber: pn,
+          .map(([materialKey, data]) => ({
+            materialKey,
             description: data.description,
             avgLeadTime: Math.round(data.totalTime / data.count)
           }))
@@ -1094,7 +1114,7 @@ const KPIView = ({ currentUser }) => {
                     <span className="font-bold text-green-400">#{idx + 1}</span>
                   </div>
                   <div>
-                    <p className="font-mono font-bold text-white text-sm">{mat.partNumber}</p>
+                    <p className="font-mono font-bold text-white text-sm">{mat.materialKey}</p>
                     <p className="text-xs text-gray-400 truncate max-w-[200px]">{mat.description}</p>
                   </div>
                 </div>
@@ -1116,7 +1136,7 @@ const KPIView = ({ currentUser }) => {
             {kpiData.problemMaterials.map((mat, idx) => (
               <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-lg p-4 border border-red-500/20">
                 <div>
-                  <p className="font-mono font-bold text-white text-sm">{mat.partNumber}</p>
+                  <p className="font-mono font-bold text-white text-sm">{mat.materialKey}</p>
                   <p className="text-xs text-gray-400 truncate max-w-[200px]">{mat.description}</p>
                 </div>
                 <div className="text-right">
@@ -1273,8 +1293,7 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
         // ✅ Estado VALIDADO: no existe pedido → crear
         if (existingOrder.exists === false) {
           await addDoc(collection(db, 'active_orders'), {
-            cardId: scannedId,
-            ...card,
+            ...buildOrderPayloadFromCard(card, scannedId),
             status: 'PENDING',
             requestedBy: 'Produccion',
             createdAt: serverTimestamp(),
@@ -1283,32 +1302,15 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
 
           setFeedback({
             type: 'success',
-            message: `✓ PEDIDO CREADO\n📍 ${card.location}\n📦 ${card.partNumber}\n⏱️ El almacén será notificado`
+            message: `✓ PEDIDO CREADO
+📦 ${getMaterialDisplayName(card)}
+📍 ${card.zona || 'S/Z'} • ${card.location || 'S/U'}
+⏱️ El almacén será notificado`
           });
 
           setScanning(false);
           return;
         }
-
-
-        // ✅ SOLO ACÁ se crea pedido
-
-
-        // Crear nuevo pedido
-        // En handleScan -> Caso A (Producción)
-        await addDoc(collection(db, 'active_orders'), {
-          cardId: scannedId,
-          ...card, // 🔥 Esto copia complejidad, bins, targetLeadTime, etc.
-          status: 'PENDING',
-          requestedBy: 'Produccion',
-          createdAt: serverTimestamp(),
-          timestamp: serverTimestamp()
-        });
-
-        setFeedback({
-          type: 'success',
-          message: `✓ PEDIDO CREADO\n📍 ${card.location}\n📦 ${card.partNumber}\n⏱️ El almacén será notificado`
-        });
       }
 
       // ========== CASO B: CON LOGIN (ALMACÉN) ==========
@@ -1367,10 +1369,17 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
             await addDoc(collection(db, 'completed_orders'), {
               // Datos básicos del pedido
               cardId: fullOrderData.cardId,
+              stockKey: fullOrderData.stockKey || '',
               partNumber: fullOrderData.partNumber,
+              versionCode: fullOrderData.versionCode || '',
               description: fullOrderData.description,
+              typeUnits: fullOrderData.typeUnits || '',
+              zona: fullOrderData.zona || '',
               location: fullOrderData.location,
+              rackCode: fullOrderData.rackCode || '',
+              zoneCode: fullOrderData.zoneCode || '',
               standardPack: fullOrderData.standardPack,
+              totalBins: fullOrderData.totalBins || 0,
               requestedBy: fullOrderData.requestedBy,
               takenBy: fullOrderData.takenBy,
 
@@ -1395,7 +1404,7 @@ const OperatorView = ({ currentUser, onLogout, onOpenLogin }) => {
 
             setFeedback({
               type: 'success',
-              message: `✅ ENTREGA FINALIZADA\n📦 ${fullOrderData.partNumber}\n📍 ${fullOrderData.location}\n👤 Por: ${userName}\n⏱️ Tiempo total: ${metrics.totalLeadTime} min`
+              message: `✅ ENTREGA FINALIZADA\n📦 ${getMaterialDisplayName(fullOrderData)}\n📍 ${fullOrderData.zona || 'S/Z'} • ${fullOrderData.location || 'S/U'}\n👤 Por: ${userName}\n⏱️ Tiempo total: ${metrics.totalLeadTime} min`
             });
 
           } catch (error) {
@@ -1595,134 +1604,112 @@ const MaterialSearchView = ({ userRole }) => {
   const [loading, setLoading] = useState(false);
   const [historicalData, setHistoricalData] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [editData, setEditData] = useState({});
-
-  // 🔥 NUEVOS ESTADOS
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentSearches, setRecentSearches] = useState([]);
   const [allMaterials, setAllMaterials] = useState([]);
+  const [createForm, setCreateForm] = useState({
+    stockKey: '', partNumber: '', versionCode: '', description: '', typeUnits: '', standardPack: '', complexityWeight: 1, stdOpTime: 10, targetLeadTime: 30, totalBins: 0,
+    locations: [{ zoneCode: '', zona: '', rackCode: '', location: '', coordX: '', coordY: '' }]
+  });
 
-  // 🔥 CARGAR TODOS LOS MATERIALES AL INICIAR
+  const loadMaterials = async () => {
+    const materialsSnap = await getDocs(collection(db, 'materials'));
+    const materials = materialsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    setAllMaterials(materials);
+  };
+
   useEffect(() => {
-    const loadAllMaterials = async () => {
+    const init = async () => {
       try {
-        const materialsSnap = await getDocs(collection(db, 'kanban_cards'));
-        const materials = materialsSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setAllMaterials(materials);
-
-        // Cargar búsquedas recientes de localStorage
+        await loadMaterials();
         const saved = localStorage.getItem('recentSearches');
-        if (saved) {
-          setRecentSearches(JSON.parse(saved));
-        }
+        if (saved) setRecentSearches(JSON.parse(saved));
       } catch (error) {
         console.error('Error cargando materiales:', error);
       }
     };
-    loadAllMaterials();
+    init();
   }, []);
 
-  // 🔥 BÚSQUEDA INTELIGENTE CON SUGERENCIAS
   const handleInputChange = (value) => {
     setSearchTerm(value);
-
     if (value.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-
-    // Buscar coincidencias en Part Number O Descripción
-    const matches = allMaterials.filter(mat => {
-      const searchLower = value.toLowerCase();
-      const partMatch = mat.partNumber?.toLowerCase().includes(searchLower);
-      const descMatch = mat.description?.toLowerCase().includes(searchLower);
-      return partMatch || descMatch;
-    }).slice(0, 8); // Máximo 8 sugerencias
-
+    const searchLower = value.toLowerCase();
+    const matches = allMaterials.filter(mat => (
+      mat.stockKey?.toLowerCase().includes(searchLower)
+      || mat.partNumber?.toLowerCase().includes(searchLower)
+      || mat.description?.toLowerCase().includes(searchLower)
+    )).slice(0, 8);
     setSuggestions(matches);
     setShowSuggestions(matches.length > 0);
   };
 
-  // 🔥 SELECCIONAR SUGERENCIA
-  const selectSuggestion = (material) => {
-    setSearchTerm(material.partNumber);
-    setShowSuggestions(false);
-    handleSearch(material.partNumber);
-  };
-
-  // 🔥 GUARDAR EN BÚSQUEDAS RECIENTES
-  const saveToRecent = (partNumber, description) => {
-    const newSearch = {
-      partNumber,
-      description,
-      timestamp: Date.now()
-    };
-
-    const updated = [
-      newSearch,
-      ...recentSearches.filter(s => s.partNumber !== partNumber)
-    ].slice(0, 5); // Máximo 5 búsquedas recientes
-
+  const saveToRecent = (material) => {
+    const key = material.stockKey || material.partNumber;
+    const newSearch = { key, stockKey: material.stockKey || '', partNumber: material.partNumber || '', description: material.description || '', timestamp: Date.now() };
+    const updated = [newSearch, ...recentSearches.filter(s => s.key !== key)].slice(0, 5);
     setRecentSearches(updated);
     localStorage.setItem('recentSearches', JSON.stringify(updated));
   };
 
   const handleSearch = async (searchValue = searchTerm) => {
     if (!searchValue.trim()) return;
-
     setLoading(true);
     setSearchResult(null);
     setHistoricalData(null);
     setShowSuggestions(false);
 
     try {
-      const cardRef = doc(db, 'kanban_cards', searchValue.toUpperCase().trim());
-      const cardSnap = await getDoc(cardRef);
+      const term = searchValue.trim();
+      let materialDoc = null;
+      const byId = await getDoc(doc(db, 'materials', term.toUpperCase()));
+      if (byId.exists()) {
+        materialDoc = { id: byId.id, ...byId.data() };
+      } else {
+        const found = allMaterials.find(mat =>
+          (mat.stockKey || '').toLowerCase() === term.toLowerCase()
+          || (mat.partNumber || '').toLowerCase() === term.toLowerCase()
+          || (mat.description || '').toLowerCase() === term.toLowerCase()
+        ) || allMaterials.find(mat =>
+          (mat.stockKey || '').toLowerCase().includes(term.toLowerCase())
+          || (mat.partNumber || '').toLowerCase().includes(term.toLowerCase())
+          || (mat.description || '').toLowerCase().includes(term.toLowerCase())
+        );
+        if (found) materialDoc = found;
+      }
 
-      if (!cardSnap.exists()) {
+      if (!materialDoc) {
         setSearchResult({ notFound: true });
         setLoading(false);
         return;
       }
 
-      const cardData = { id: cardSnap.id, ...cardSnap.data() };
-      setSearchResult(cardData);
+      const cardsSnap = await getDocs(query(collection(db, 'kanban_cards'), where('stockKey', '==', materialDoc.stockKey || materialDoc.id)));
+      const cards = cardsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 🔥 GUARDAR EN RECIENTES
-      saveToRecent(cardData.partNumber, cardData.description);
+      setSearchResult({ ...materialDoc, cards });
+      saveToRecent(materialDoc);
 
-      // Buscar historial
-      const historyQuery = query(
-        collection(db, 'completed_orders'),
-        where('partNumber', '==', searchValue.toUpperCase().trim())
-      );
+      const historyQuery = query(collection(db, 'completed_orders'), where('stockKey', '==', materialDoc.stockKey || materialDoc.id));
       const historySnap = await getDocs(historyQuery);
-
-      const totalOrders = historySnap.size;
       const orders = historySnap.docs.map(d => d.data());
-
-      const avgLeadTime = orders.length > 0
-        ? Math.round(orders.reduce((sum, o) => sum + (o.totalLeadTime || 0), 0) / orders.length)
-        : 0;
-
+      const avgLeadTime = orders.length ? Math.round(orders.reduce((sum, o) => sum + (o.totalLeadTime || 0), 0) / orders.length) : 0;
       setHistoricalData({
-        totalOrders,
+        totalOrders: historySnap.size,
         avgLeadTime,
-        lastOrderDate: orders.length > 0 && orders[0].deliveredAt
-          ? orders[0].deliveredAt.toDate().toLocaleDateString('es-AR')
-          : 'N/A'
+        lastOrderDate: orders.length > 0 && orders[0].deliveredAt ? orders[0].deliveredAt.toDate().toLocaleDateString('es-AR') : 'N/A'
       });
-
     } catch (error) {
       console.error('Error en búsqueda:', error);
       setSearchResult({ error: true });
     }
-
     setLoading(false);
   };
 
@@ -1738,350 +1725,176 @@ const MaterialSearchView = ({ userRole }) => {
 
   const saveEdit = async () => {
     try {
-      const cardRef = doc(db, 'kanban_cards', searchResult.id);
-      await updateDoc(cardRef, {
+      const materialRef = doc(db, 'materials', searchResult.stockKey);
+      await updateDoc(materialRef, {
         stdOpTime: parseInt(editData.stdOpTime),
         complexityWeight: parseInt(editData.complexityWeight),
         targetLeadTime: parseInt(editData.targetLeadTime),
         standardPack: editData.standardPack
       });
-
-      alert('✅ Datos actualizados correctamente');
+      alert('✅ Material actualizado correctamente');
       setShowEditModal(false);
-      handleSearch(searchResult.partNumber);
+      await loadMaterials();
+      handleSearch(searchResult.stockKey);
     } catch (error) {
       console.error('Error al actualizar:', error);
       alert('❌ Error al guardar cambios');
     }
   };
 
-  return (
-    <div className="space-y-6">
+  const updateLocation = (index, field, value) => {
+    const next = [...createForm.locations];
+    next[index] = { ...next[index], [field]: value };
+    setCreateForm({ ...createForm, locations: next });
+  };
+
+  const addLocationRow = () => {
+    setCreateForm({ ...createForm, locations: [...createForm.locations, { zoneCode: '', zona: '', rackCode: '', location: '', coordX: '', coordY: '' }] });
+  };
+
+  const saveNewMaterial = async () => {
+    try {
+      if (!createForm.stockKey.trim()) return alert('stockKey es obligatorio');
+      if (createForm.locations.length < 1) return alert('Debe cargar al menos una ubicación');
+
+      const dupKey = new Set();
+      for (const row of createForm.locations) {
+        if (!row.zoneCode || !row.rackCode || !row.zona || !row.location) return alert('Complete zoneCode, zona, rackCode y location en cada tarjeta');
+        const key = `${row.zoneCode}__${row.rackCode}`;
+        if (dupKey.has(key)) return alert('No se permiten tarjetas duplicadas para zoneCode + rackCode');
+        dupKey.add(key);
+      }
+
+      const stockKey = createForm.stockKey.trim().toUpperCase();
+      const { locations, ...materialData } = createForm;
+      await setDoc(doc(db, 'materials', stockKey), { ...materialData, stockKey, active: true }, { merge: true });
+
+      for (const row of createForm.locations) {
+        const cardId = `${stockKey}__${row.zoneCode}__${row.rackCode}`;
+        await setDoc(doc(db, 'kanban_cards', cardId), {
+          cardId,
+          stockKey,
+          partNumber: createForm.partNumber || '',
+          versionCode: createForm.versionCode || '',
+          description: createForm.description || '',
+          typeUnits: createForm.typeUnits || '',
+          standardPack: createForm.standardPack || '',
+          avgQty: createForm.avgQty || '',
+          complexityWeight: parseInt(createForm.complexityWeight) || 1,
+          stdOpTime: parseInt(createForm.stdOpTime) || 10,
+          targetLeadTime: parseInt(createForm.targetLeadTime) || 30,
+          totalBins: parseInt(createForm.totalBins) || 0,
+          active: true,
+          zoneCode: row.zoneCode,
+          zona: row.zona,
+          rackCode: row.rackCode,
+          location: row.location,
+          coordX: row.coordX,
+          coordY: row.coordY,
+          rackCoord: `${row.coordX || ''},${row.coordY || ''}`
+        }, { merge: true });
+      }
+
+      alert('✅ Material y tarjetas guardados');
+      setShowCreateModal(false);
+      await loadMaterials();
+    } catch (error) {
+      console.error('Error al guardar material:', error);
+      alert('❌ No se pudo guardar el material');
+    }
+  };
+
+  return <div className="space-y-6">
+    <div className="flex items-center justify-between">
       <div>
         <h1 className="text-3xl font-bold text-white">🔍 Buscador de Materiales</h1>
-        <p className="text-gray-400 mt-1">Busca por Part Number o Descripción</p>
+        <p className="text-gray-400 mt-1">Busca por stockKey, Part Number o Descripción</p>
       </div>
-
-      {/* Barra de Búsqueda Mejorada */}
-      <div className="relative">
-        <div className="flex gap-3">
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => handleInputChange(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
-              placeholder="Ej: 01001260120-0 o 'papel creppe'"
-              className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-6 py-4 text-white text-lg focus:outline-none focus:border-blue-500 pr-12"
-            />
-
-            {/* Icono de búsqueda dentro del input */}
-            <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-
-            {/* 🔥 SUGERENCIAS DESPLEGABLES */}
-            {showSuggestions && suggestions.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border-2 border-gray-700 rounded-xl shadow-2xl z-50 max-h-80 overflow-y-auto"
-              >
-                {suggestions.map((mat, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => selectSuggestion(mat)}
-                    className="w-full text-left px-6 py-4 hover:bg-gray-800 transition-colors border-b border-gray-800 last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Package className="w-5 h-5 text-blue-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-mono font-bold text-white text-sm truncate">
-                          {mat.partNumber}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {mat.description}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <MapPin className="w-3 h-3 text-purple-400" />
-                          <span className="text-xs text-purple-300">{mat.location}</span>
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-xs text-gray-500">Pack</p>
-                        <p className="text-sm font-bold text-green-400">{mat.standardPack}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </div>
-
-          <button
-            onClick={() => handleSearch()}
-            disabled={loading}
-            className="px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg hover:shadow-blue-500/20"
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <Search className="w-5 h-5" />
-            )}
-            Buscar
-          </button>
-        </div>
-      </div>
-
-      {/* 🔥 BÚSQUEDAS RECIENTES */}
-      {!searchResult && recentSearches.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gray-900/30 rounded-2xl border border-gray-800 p-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-gray-400" />
-              Búsquedas Recientes
-            </h3>
-            <button
-              onClick={() => {
-                setRecentSearches([]);
-                localStorage.removeItem('recentSearches');
-              }}
-              className="text-xs text-gray-500 hover:text-red-400 transition-colors"
-            >
-              Limpiar
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {recentSearches.map((recent, idx) => (
-              <motion.button
-                key={idx}
-                whileHover={{ scale: 1.02 }}
-                onClick={() => handleSearch(recent.partNumber)}
-                className="bg-gray-800/50 hover:bg-gray-800 rounded-xl p-4 text-left transition-all border border-gray-700 hover:border-blue-500/30"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Package className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-mono font-bold text-white text-xs truncate">
-                      {recent.partNumber}
-                    </p>
-                    <p className="text-xs text-gray-400 truncate mt-1">
-                      {recent.description}
-                    </p>
-                  </div>
-                </div>
-              </motion.button>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Resultados - IGUAL QUE ANTES */}
-      {searchResult && (
-        <div className="space-y-6">
-          {searchResult.notFound ? (
-            <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-8 text-center">
-              <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-              <p className="text-xl font-bold text-red-400">Material no encontrado</p>
-              <p className="text-gray-400 mt-2">El Part Number ingresado no existe en el sistema</p>
-            </div>
-          ) : searchResult.error ? (
-            <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-8 text-center">
-              <p className="text-xl font-bold text-red-400">Error en la búsqueda</p>
-            </div>
-          ) : (
-            <>
-              {/* Información del Material */}
-              <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6">
-                <div className="flex items-start justify-between mb-6">
-                  <div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <Package className="w-8 h-8 text-blue-400" />
-                      <h2 className="text-2xl font-bold text-white">Información del Material</h2>
-                    </div>
-                    <p className="text-sm text-gray-400">Part Number: {searchResult.partNumber}</p>
-                  </div>
-
-                  {/* BOTÓN EDITAR - SOLO ADMIN */}
-                  {userRole === 'ADMIN' && (
-                    <button
-                      onClick={handleEdit}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all flex items-center gap-2"
-                    >
-                      <Settings className="w-4 h-4" />
-                      Editar Parámetros
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Descripción</p>
-                    <p className="text-white font-medium">{searchResult.description}</p>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Ubicación</p>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-blue-400" />
-                      <p className="text-white font-bold">{searchResult.location}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Zona</p>
-                    <p className="text-white font-medium">{searchResult.zona || 'N/A'}</p>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Pack Estándar</p>
-                    <p className="text-white font-bold text-xl">{searchResult.standardPack} unidades</p>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Tiempo Estándar</p>
-                    <p className="text-white font-bold">{searchResult.stdOpTime || 10} min</p>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Complejidad</p>
-                    <div className="flex items-center gap-2">
-                      {Array.from({ length: 5 }, (_, i) => (
-                        <div
-                          key={i}
-                          className={`w-3 h-3 rounded-full ${i < (searchResult.complexityWeight || 1)
-                            ? 'bg-orange-500'
-                            : 'bg-gray-700'
-                            }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Lead Time Objetivo</p>
-                    <p className="text-white font-bold">{searchResult.targetLeadTime || 30} min</p>
-                  </div>
-
-                  <div className="bg-gray-800/50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 uppercase mb-2">Bins Totales</p>
-                    <p className="text-white font-bold">{searchResult.totalBins || 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Datos Históricos */}
-              {historicalData && (
-                <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 backdrop-blur-sm rounded-2xl border border-blue-500/30 p-6">
-                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                    <Activity className="w-6 h-6 text-blue-400" />
-                    Historial de Pedidos
-                  </h3>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
-                      <p className="text-sm text-gray-400 mb-2">Total de Pedidos</p>
-                      <p className="text-4xl font-black text-blue-400">{historicalData.totalOrders}</p>
-                    </div>
-
-                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
-                      <p className="text-sm text-gray-400 mb-2">Lead Time Promedio</p>
-                      <p className="text-4xl font-black text-purple-400">{historicalData.avgLeadTime}<span className="text-lg">min</span></p>
-                    </div>
-
-                    <div className="bg-gray-900/50 rounded-xl p-4 text-center">
-                      <p className="text-sm text-gray-400 mb-2">Último Pedido</p>
-                      <p className="text-lg font-bold text-green-400">{historicalData.lastOrderDate}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Modal de Edición - SOLO ADMIN */}
-      {showEditModal && userRole === 'ADMIN' && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-gray-900 border-2 border-gray-700 rounded-2xl p-8 w-full max-w-2xl"
-          >
-            <h3 className="text-2xl font-bold text-white mb-6">Editar Parámetros Kanban</h3>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="text-sm text-gray-300 font-medium mb-2 block">Tiempo Estándar (min)</label>
-                <input
-                  type="number"
-                  value={editData.stdOpTime}
-                  onChange={(e) => setEditData({ ...editData, stdOpTime: e.target.value })}
-                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-300 font-medium mb-2 block">Complejidad (1-5)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={editData.complexityWeight}
-                  onChange={(e) => setEditData({ ...editData, complexityWeight: e.target.value })}
-                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-300 font-medium mb-2 block">Lead Time Objetivo (min)</label>
-                <input
-                  type="number"
-                  value={editData.targetLeadTime}
-                  onChange={(e) => setEditData({ ...editData, targetLeadTime: e.target.value })}
-                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-300 font-medium mb-2 block">Pack Estándar</label>
-                <input
-                  type="text"
-                  value={editData.standardPack}
-                  onChange={(e) => setEditData({ ...editData, standardPack: e.target.value })}
-                  className="w-full bg-gray-800 border-2 border-gray-700 rounded-xl px-4 py-3 text-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={saveEdit}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl"
-              >
-                Guardar Cambios
-              </button>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl"
-              >
-                Cancelar
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {userRole === 'ADMIN' && <button onClick={() => setShowCreateModal(true)} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-bold text-white">+ Alta material</button>}
     </div>
-  );
+
+    <div className="relative">
+      <div className="flex gap-3">
+        <div className="flex-1 relative">
+          <input type="text" value={searchTerm} onChange={(e) => handleInputChange(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSearch()} onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)} placeholder="Ej: 05005631013-0" className="w-full bg-gray-900/50 border-2 border-gray-700 rounded-xl px-6 py-4 text-white text-lg focus:outline-none focus:border-blue-500 pr-12" />
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+          {showSuggestions && suggestions.length > 0 && <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border-2 border-gray-700 rounded-xl shadow-2xl z-50 max-h-80 overflow-y-auto">
+            {suggestions.map((mat) => <button key={mat.id} onClick={() => { setSearchTerm(mat.stockKey || mat.partNumber || ''); setShowSuggestions(false); handleSearch(mat.stockKey || mat.partNumber || ''); }} className="w-full text-left px-6 py-4 hover:bg-gray-800 border-b border-gray-800 last:border-0">
+              <p className="font-mono font-bold text-white text-sm truncate">{getMaterialDisplayName(mat)}</p>
+              <p className="text-xs text-gray-400 truncate">{mat.description}</p>
+            </button>)}
+          </div>}
+        </div>
+        <button onClick={() => handleSearch()} disabled={loading} className="px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white font-bold rounded-xl">Buscar</button>
+      </div>
+    </div>
+
+    {!searchResult && recentSearches.length > 0 && <div className="bg-gray-900/30 rounded-2xl border border-gray-800 p-4">
+      <p className="text-sm text-gray-300 mb-2">Búsquedas recientes</p>
+      <div className="flex gap-2 flex-wrap">{recentSearches.map((recent) => <button key={recent.key} onClick={() => handleSearch(recent.key)} className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-200">{recent.stockKey || recent.partNumber}</button>)}</div>
+    </div>}
+
+    {searchResult?.notFound && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300">No se encontró material</div>}
+
+    {searchResult && !searchResult.notFound && !searchResult.error && <div className="space-y-6">
+      <div className="bg-gray-900/40 rounded-2xl border border-gray-800 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-white">{getMaterialDisplayName(searchResult)}</h3>
+          {userRole === 'ADMIN' && <button onClick={handleEdit} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white">Editar material</button>}
+        </div>
+        <p className="text-gray-300 mb-4">{searchResult.description}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div className="bg-gray-800/50 rounded p-3"><span className="text-gray-400">Part Number</span><p className="text-white font-mono">{searchResult.partNumber || 'N/A'}</p></div>
+          <div className="bg-gray-800/50 rounded p-3"><span className="text-gray-400">Unidades</span><p className="text-white">{searchResult.typeUnits || 'N/A'}</p></div>
+          <div className="bg-gray-800/50 rounded p-3"><span className="text-gray-400">Pack</span><p className="text-white">{searchResult.standardPack || 'N/A'}</p></div>
+          <div className="bg-gray-800/50 rounded p-3"><span className="text-gray-400">Bins</span><p className="text-white">{searchResult.totalBins || 0}</p></div>
+        </div>
+      </div>
+
+      <div className="bg-gray-900/40 rounded-2xl border border-gray-800 p-6">
+        <h3 className="text-lg font-bold text-white mb-4">Tarjetas asociadas</h3>
+        <div className="space-y-3">
+          {(searchResult.cards || []).map(card => <div key={card.id} className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+            <p className="font-mono text-sm text-blue-300">{card.cardId || card.id}</p>
+            <p className="text-white">{card.zona} • {card.location}</p>
+            <p className="text-xs text-gray-400">Rack: {card.rackCode || 'N/A'} {card.qrUrl ? `• QR: ${card.qrUrl}` : ''}</p>
+          </div>)}
+          {(searchResult.cards || []).length === 0 && <p className="text-gray-400">No hay tarjetas asociadas</p>}
+        </div>
+      </div>
+
+      {historicalData && <div className="bg-gray-900/40 rounded-2xl border border-gray-800 p-6 grid grid-cols-3 gap-3 text-center">
+        <div><p className="text-gray-400 text-sm">Total Pedidos</p><p className="text-white text-2xl font-bold">{historicalData.totalOrders}</p></div>
+        <div><p className="text-gray-400 text-sm">Lead Time Prom.</p><p className="text-white text-2xl font-bold">{historicalData.avgLeadTime} min</p></div>
+        <div><p className="text-gray-400 text-sm">Último pedido</p><p className="text-white text-lg font-bold">{historicalData.lastOrderDate}</p></div>
+      </div>}
+    </div>}
+
+    {showEditModal && userRole === 'ADMIN' && <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6"><div className="bg-gray-900 border-2 border-gray-700 rounded-2xl p-8 w-full max-w-xl">
+      <h3 className="text-2xl font-bold text-white mb-6">Editar material</h3>
+      <div className="space-y-3 mb-6">
+        <input type="number" value={editData.stdOpTime} onChange={(e) => setEditData({ ...editData, stdOpTime: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white" placeholder="Tiempo estándar" />
+        <input type="number" value={editData.complexityWeight} onChange={(e) => setEditData({ ...editData, complexityWeight: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white" placeholder="Complejidad" />
+        <input type="number" value={editData.targetLeadTime} onChange={(e) => setEditData({ ...editData, targetLeadTime: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white" placeholder="Lead time objetivo" />
+        <input type="text" value={editData.standardPack} onChange={(e) => setEditData({ ...editData, standardPack: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white" placeholder="Pack estándar" />
+      </div>
+      <div className="flex gap-3"><button onClick={saveEdit} className="flex-1 bg-green-600 py-2 rounded text-white font-bold">Guardar</button><button onClick={() => setShowEditModal(false)} className="flex-1 bg-gray-700 py-2 rounded text-white">Cancelar</button></div>
+    </div></div>}
+
+    {showCreateModal && userRole === 'ADMIN' && <div className="fixed inset-0 bg-black/80 z-50 overflow-auto p-6"><div className="max-w-4xl mx-auto bg-gray-900 border border-gray-700 rounded-2xl p-6 space-y-4">
+      <h3 className="text-2xl font-bold text-white">Alta de material kanban</h3>
+      <p className="text-gray-400 text-sm">Datos del material</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {['stockKey','partNumber','versionCode','description','typeUnits','standardPack','complexityWeight','stdOpTime','targetLeadTime','totalBins'].map((field) => <input key={field} value={createForm[field]} onChange={(e) => setCreateForm({ ...createForm, [field]: e.target.value })} placeholder={field} className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white" />)}
+      </div>
+      <p className="text-gray-400 text-sm">Tarjetas / ubicaciones</p>
+      <div className="space-y-2">{createForm.locations.map((loc, idx) => <div key={idx} className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        {['zoneCode','zona','rackCode','location','coordX','coordY'].map((f) => <input key={f} value={loc[f]} onChange={(e) => updateLocation(idx, f, e.target.value)} placeholder={f} className="bg-gray-800 border border-gray-700 rounded px-2 py-2 text-white text-sm" />)}
+      </div>)}</div>
+      <button onClick={addLocationRow} className="px-3 py-2 bg-blue-600 rounded text-white">Agregar otra ubicación</button>
+      <div className="flex gap-3"><button onClick={saveNewMaterial} className="flex-1 bg-green-600 py-2 rounded text-white font-bold">Guardar material</button><button onClick={() => setShowCreateModal(false)} className="flex-1 bg-gray-700 py-2 rounded text-white">Cancelar</button></div>
+    </div></div>}
+  </div>;
 };
 // ============ SUPPLY CHAIN DASHBOARD (DESKTOP) ============
 const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
@@ -2096,10 +1909,10 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
     audio.play().catch(e => console.log("Esperando interacción para audio"));
   };
 
-  const sendNotification = (partNumber, location) => {
+  const sendNotification = (materialLabel, zona, rackCode, location) => {
     if (Notification.permission === "granted") {
       new Notification("🚨 NUEVO PEDIDO KANBAN", {
-        body: `Material: ${partNumber} en ${location}`,
+        body: `Material: ${materialLabel} • ${zona || 'S/Z'} / ${rackCode || location || 'S/U'}`,
         icon: "/favicon.ico" // O el logo de TTE
       });
     }
@@ -2146,7 +1959,7 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
 
           // Notificación de Chrome
           const lastOrder = ordersData.find(o => o.status === 'PENDING');
-          if (lastOrder) sendNotification(lastOrder.partNumber, lastOrder.location);
+          if (lastOrder) sendNotification(getMaterialDisplayName(lastOrder), lastOrder.zona, lastOrder.rackCode, lastOrder.location);
 
           // Título titilante
           let toggled = false;
@@ -2231,10 +2044,17 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
           await addDoc(collection(db, 'completed_orders'), {
             // Datos básicos
             cardId: orderData.cardId,
+            stockKey: orderData.stockKey || '',
             partNumber: orderData.partNumber,
+            versionCode: orderData.versionCode || '',
             description: orderData.description,
+            typeUnits: orderData.typeUnits || '',
+            zona: orderData.zona || '',
             location: orderData.location,
+            rackCode: orderData.rackCode || '',
+            zoneCode: orderData.zoneCode || '',
             standardPack: orderData.standardPack,
+            totalBins: orderData.totalBins || 0,
             requestedBy: orderData.requestedBy,
             takenBy: orderData.takenBy,
 
@@ -2784,7 +2604,7 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon, color, showAction
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className={`w-2 h-2 rounded-full ${colorClasses[color]} animate-pulse`}></div>
-            <span className="font-mono font-bold text-white text-lg">{order.partNumber}</span>
+            <span className="font-mono font-bold text-white text-lg">{order.stockKey || order.partNumber}</span>
           </div>
           <p className="text-gray-300">{order.description}</p>
         </div>
@@ -2825,7 +2645,7 @@ const OrderCard = ({ order, onAction, actionLabel, actionIcon, color, showAction
       )}
       <div className="bg-gray-900/50 rounded-lg p-3">
         <div className="text-xs text-gray-400 mb-1">Pack Estándar</div>
-        <div className="font-medium text-white">{order.standardPack} unidades</div>
+        <div className="font-medium text-white">{order.standardPack} {order.typeUnits || "unidades"}</div>
       </div>
 
 
