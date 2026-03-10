@@ -63,6 +63,38 @@ const buildOrderPayloadFromCard = (card = {}, cardId = '') => ({
 
 const normalizeMapKey = (value = '') => value.toString().trim().toUpperCase();
 
+const getSafeDate = (value) => {
+  if (!value) return null;
+  if (value?.toDate) return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value?.seconds === 'number') return new Date(value.seconds * 1000);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getZoneCodeFromOrder = (order = {}) => {
+  const direct = normalizeMapKey(order.zoneCode || '');
+  if (direct) return direct;
+
+  const cardZone = (order.cardId || '').split('__')[1];
+  if (cardZone) return normalizeMapKey(cardZone);
+
+  const zoneMatch = (order.zona || '').match(/zona\s*(\d+)/i);
+  if (zoneMatch?.[1]) return `Z${zoneMatch[1].padStart(2, '0')}`;
+
+  return '';
+};
+
+const getRackCodeFromOrder = (order = {}) => {
+  const direct = normalizeMapKey(order.rackCode || '');
+  if (direct) return direct;
+
+  const cardRack = (order.cardId || '').split('__')[2];
+  if (cardRack) return normalizeMapKey(cardRack);
+
+  return '';
+};
+
 // ============ UTILIDAD PARA CALCULAR MÉTRICAS DE PEDIDO ============
 const calculateOrderMetrics = (orderData, deliveredAt = new Date()) => {
   // Asegurarnos de que tenemos los timestamps esenciales
@@ -297,12 +329,12 @@ const KPIView = ({ currentUser }) => {
     });
 
     if (alerts.length === 0) {
-      const highestLT = Math.max(...heatmapData.map(h => h.leadTime));
-      const criticalHour = heatmapData.find(h => h.leadTime === highestLT);
+      const highestLT = heatmapData.length > 0 ? Math.max(...heatmapData.map(h => h.leadTime || 0)) : 0;
+      const criticalHour = heatmapData.find(h => (h.leadTime || 0) === highestLT);
 
       alerts.push({
         type: 'info',
-        title: highestLT > 0 ? `Pico de ${highestLT}min el ${dayNames[criticalHour.day]} a las ${criticalHour.hour}:00` : 'Sin alertas críticas',
+        title: highestLT > 0 && criticalHour ? `Pico de ${highestLT}min el ${dayNames[criticalHour.day]} a las ${criticalHour.hour}:00` : 'Sin alertas críticas',
         message: highestLT > 0 ? 'Hora con mayor lead time registrado' : 'Todos los tiempos dentro del objetivo',
         time: 'Análisis',
         location: 'Todas las áreas',
@@ -326,8 +358,9 @@ const KPIView = ({ currentUser }) => {
       peakHours: (() => {
         const hourCounts = {};
         kpiData.orders.filter(o => o.deliveredBy === op.name).forEach(order => {
-          if (order.timestamp) {
-            const hour = order.timestamp.toDate().getHours();
+          const orderDate = getSafeDate(order.timestamp);
+          if (orderDate) {
+            const hour = orderDate.getHours();
             hourCounts[hour] = (hourCounts[hour] || 0) + 1;
           }
         });
@@ -337,7 +370,7 @@ const KPIView = ({ currentUser }) => {
           .map(([hour]) => parseInt(hour));
       })()
     }));
-  }, [kpiData.operatorRanking]);
+  }, [kpiData.operatorRanking, kpiData.orders]);
   useEffect(() => {
     const fetchKPIs = async () => {
       try {
@@ -371,6 +404,23 @@ const KPIView = ({ currentUser }) => {
         const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         if (orders.length === 0) {
+          setHeatmapData([]);
+          setKpiData(prev => ({
+            ...prev,
+            overallLeadTime: 0,
+            slaSuccessRate: 0,
+            deliveriesToday: 0,
+            criticalDeliveries: 0,
+            operatorRanking: [],
+            avgReactionTime: 0,
+            avgExecutionTime: 0,
+            topMaterials: [],
+            problemMaterials: [],
+            hourlyHeatmap: [],
+            suspiciousRate: 0,
+            hourlyLeadTimes: [],
+            orders: []
+          }));
           setLoading(false);
           return;
         }
@@ -437,7 +487,8 @@ const KPIView = ({ currentUser }) => {
         const hourlyAnalysis = {};
         orders.forEach(order => {
           if (order.timestamp) {
-            const date = order.timestamp.toDate();
+            const date = getSafeDate(order.timestamp);
+            if (!date) return;
             const day = date.getDay(); // 0=domingo, 1=lunes...
             const hour = date.getHours();
             const key = `${day}-${hour}`;
@@ -528,7 +579,9 @@ const KPIView = ({ currentUser }) => {
 
         orders.forEach(o => {
           if (o.timestamp) {
-            const hour = o.timestamp.toDate().getHours();
+            const tsDate = getSafeDate(o.timestamp);
+            if (!tsDate) return;
+            const hour = tsDate.getHours();
             hourlyCreationMap[hour].count++;
             hourlyCreationMap[hour].totalTime += (o.totalLeadTime || 0);
           }
@@ -2091,10 +2144,10 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
 
   // Lógica para que titile tanto la Zona como el Rack específico
   const locationStatuses = orders.reduce((acc, order) => {
-    const keys = [
-      normalizeMapKey(order.zoneCode),
-      normalizeMapKey(order.rackCode)
-    ].filter(Boolean);
+    const zoneKey = getZoneCodeFromOrder(order);
+    const rackKey = getRackCodeFromOrder(order);
+
+    const keys = [zoneKey, rackKey].filter(Boolean);
 
     keys.forEach((key) => {
       if (!acc[key]) acc[key] = { pending: false, inTransit: false };
