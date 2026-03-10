@@ -407,20 +407,24 @@ const KPIView = ({ currentUser }) => {
           return deliveredDate >= startDate;
         });
 
+        const allDeliveredDates = allOrders
+          .map((o) => getSafeDate(o.deliveredAt) || getSafeDate(o.timestamp))
+          .filter(Boolean)
+          .sort((a, b) => a.getTime() - b.getTime());
+
         console.log('📊 KPI debug', {
           timeRange,
-          startDate: startDate.toISOString(),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          nowISO: now.toISOString(),
+          startDateISO: startDate.toISOString(),
           completedFetched: allOrders.length,
           completedInRange: orders.length,
-          sample: orders.slice(0, 3).map(o => ({
+          minDeliveredAtISO: allDeliveredDates[0]?.toISOString() || null,
+          maxDeliveredAtISO: allDeliveredDates[allDeliveredDates.length - 1]?.toISOString() || null,
+          sampleDeliveredAt: allOrders.slice(0, 5).map(o => ({
             id: o.id,
-            stockKey: o.stockKey,
-            partNumber: o.partNumber,
-            deliveredAt: !!o.deliveredAt,
-            timestamp: !!o.timestamp,
-            zoneCode: o.zoneCode,
-            rackCode: o.rackCode,
-            location: o.location
+            deliveredAtISO: (getSafeDate(o.deliveredAt) || null)?.toISOString?.() || null,
+            timestampISO: (getSafeDate(o.timestamp) || null)?.toISOString?.() || null
           }))
         });
 
@@ -2168,9 +2172,15 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
     const zoneKey = getZoneCodeFromOrder(order);
     const rackKey = getRackCodeFromOrder(order);
 
-    const keys = [zoneKey, rackKey].filter(Boolean);
+    const keys = [zoneKey];
+    if (zoneKey && rackKey) {
+      keys.push(`RACK:${zoneKey}__${rackKey}`);
+    } else if (rackKey) {
+      // Fallback legacy si no viene zona en el pedido
+      keys.push(`RACK:${rackKey}`);
+    }
 
-    keys.forEach((key) => {
+    keys.filter(Boolean).forEach((key) => {
       if (!acc[key]) acc[key] = { pending: false, inTransit: false };
       if (order.status === 'PENDING') acc[key].pending = true;
       if (order.status === 'IN_TRANSIT') acc[key].inTransit = true;
@@ -2187,7 +2197,10 @@ const SupplyChainView = ({ currentUser, userRole, onLogout }) => {
       zona: o.zona,
       rackCode: o.rackCode,
       zoneKey: getZoneCodeFromOrder(o),
-      rackKey: getRackCodeFromOrder(o)
+      rackKey: getRackCodeFromOrder(o),
+      rackCompositeKey: getZoneCodeFromOrder(o) && getRackCodeFromOrder(o)
+        ? `RACK:${getZoneCodeFromOrder(o)}__${getRackCodeFromOrder(o)}`
+        : null
     }));
 
     console.log('🗺️ Map debug', {
@@ -2354,6 +2367,7 @@ const MAP_DATA = {
     ]
   },
   sectorA: {
+    zoneCode: 'Z01',
     title: 'Detalle: Sector Estantería A',
     image: '/tu-plano_bob.png',
     pins: [
@@ -2363,6 +2377,7 @@ const MAP_DATA = {
     ]
   },
   sectorB: {
+    zoneCode: 'Z02',
     title: 'Detalle: Sector Estantería  A',
     image: '/tu-plano_bob.png',
     pins: [
@@ -2376,12 +2391,14 @@ const MAP_DATA = {
 
 const PlantMap = ({ locationStatuses }) => {
   const [activeSector, setActiveSector] = useState('general');
+  const [activeZoneCode, setActiveZoneCode] = useState('');
   const [isInteractive, setIsInteractive] = useState(false); // Por defecto: Imagen completa
   const currentConfig = MAP_DATA[activeSector] || MAP_DATA.general;
 
   // Al volver atrás, siempre reseteamos a vista completa
   const goBack = () => {
     setActiveSector('general');
+    setActiveZoneCode('');
     setIsInteractive(false);
   };
 
@@ -2476,7 +2493,14 @@ const PlantMap = ({ locationStatuses }) => {
 
               {/* PINS (AHORA RELATIVOS A LA IMAGEN) */}
               {currentConfig.pins.map((pin) => {
-                const status = locationStatuses[normalizeMapKey(pin.id)];
+                const normalizedPinId = normalizeMapKey(pin.id);
+                const zoneForRack = activeZoneCode || currentConfig.zoneCode || '';
+                const rackLookupKey = zoneForRack
+                  ? `RACK:${normalizeMapKey(zoneForRack)}__${normalizedPinId}`
+                  : `RACK:${normalizedPinId}`;
+                const status = activeSector === 'general'
+                  ? locationStatuses[normalizedPinId]
+                  : locationStatuses[rackLookupKey] || locationStatuses[`RACK:${normalizedPinId}`];
                 let color = 'bg-gray-500';
                 let shouldPulse = false;
 
@@ -2504,6 +2528,7 @@ const PlantMap = ({ locationStatuses }) => {
                       e.stopPropagation();
                       if (pin.target) {
                         setActiveSector(pin.target);
+                        setActiveZoneCode(normalizeMapKey(pin.id));
                         setIsInteractive(false);
                       }
                     }}
